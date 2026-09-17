@@ -112,18 +112,14 @@ export interface LoginResponse {
 
 export interface CurrentUser {
   username: string
-
-  role:
-    | "ADMIN"
-    | "DRIVER"
-    | "STUDENT"
-
+  role: "ADMIN" | "DRIVER" | "STUDENT"
   reference_id?: string | null
-
   full_name?: string | null
-
+  name?: string | null
+  email?: string | null
+  phone?: string | null
+  department?: string | null
   student_id?: string | null
-
   assigned_bus?: string | null
 }
 
@@ -224,6 +220,29 @@ export async function getOverview(): Promise<Overview> {
   return apiRequest<Overview>(
     "/api/v1/smart-bus/overview"
   )
+}
+
+export async function getDashboard(): Promise<any> {
+  return apiRequest<any>(
+    "/api/v1/dashboard"
+  )
+}
+
+export async function getMyFee(): Promise<{
+  student_id: string
+  academic_year: string
+  total_fee: number
+  paid_amount: number
+  pending_amount: number
+  status: "PAID" | "PARTIAL" | "PENDING"
+  payment_date?: string
+  valid_until?: string
+} | null> {
+  try {
+    return await apiRequest("/api/v1/fees/my-fee")
+  } catch {
+    return null
+  }
 }
 
 
@@ -405,56 +424,50 @@ export async function getEmergencies(): Promise<Emergency[]> {
 
 
 // =========================================================
-// QR SCANNING
+// BUS ENTRY & ATTENDANCE (Non-QR: Camera / Vision / RFID / Terminal)
 // =========================================================
 
-export interface QRScanResult {
+export interface AttendanceEventResult {
   success: boolean
-
-  action:
-    | "BOARDED"
-    | "EXITED"
-    | "DENIED"
-    | "UNKNOWN"
-
+  action: "BOARDED" | "EXITED" | "DENIED" | "UNKNOWN"
   student_id?: string
-
   name?: string
-
   bus_id?: string
-
   stop?: string
-
   fee_status?: string
-
   message: string
-
   timestamp?: string
 }
 
+export type QRScanResult = AttendanceEventResult
 
+export async function recordAttendanceEvent(
+  studentId: string,
+  busId: string,
+  stop?: string,
+  eventType?: "BOARDED" | "EXITED" | "AUTO" | "DENIED"
+): Promise<AttendanceEventResult> {
+  return apiRequest<AttendanceEventResult>(
+    "/api/v1/smart-bus/entry-events",
+    {
+      method: "POST",
+      body: JSON.stringify({
+        student_id: studentId,
+        bus_id: busId,
+        stop: stop || "",
+        event_type: eventType || "AUTO",
+      }),
+    }
+  )
+}
+
+// Backwards-compatible alias for existing callers
 export async function scanQr(
   studentId: string,
   busId: string,
   stop?: string
-): Promise<QRScanResult> {
-  return apiRequest<QRScanResult>(
-    "/api/v1/smart-bus/scan",
-    {
-      method: "POST",
-
-      body: JSON.stringify({
-        student_id:
-          studentId,
-
-        bus_id:
-          busId,
-
-        stop:
-          stop || "",
-      }),
-    }
-  )
+): Promise<AttendanceEventResult> {
+  return recordAttendanceEvent(studentId, busId, stop)
 }
 
 
@@ -591,10 +604,13 @@ export interface ManagedBus {
 
 export interface ManagedDriver {
   username: string
-
   full_name: string
-
+  name?: string
+  email?: string
+  phone?: string
+  license_number?: string
   assigned_bus?: string | null
+  status?: string
 }
 
 
@@ -631,6 +647,66 @@ export async function getManagedDrivers(): Promise<ManagedDriver[]> {
     )
 
   return data.drivers ?? []
+}
+
+
+// =========================================================
+// CREATE / UPDATE / DELETE DRIVER
+// =========================================================
+
+export async function createManagedDriver(data: {
+  username: string
+  name: string
+  password?: string
+  email?: string
+  phone?: string
+  license_number?: string
+  assigned_bus?: string
+}) {
+  return apiRequest<{
+    success: boolean
+    driver: ManagedDriver
+  }>(
+    "/api/v1/smart-bus/management/drivers",
+    {
+      method: "POST",
+      body: JSON.stringify(data),
+    }
+  )
+}
+
+export async function updateManagedDriver(
+  username: string,
+  data: {
+    name?: string
+    email?: string
+    phone?: string
+    license_number?: string
+    assigned_bus?: string | null
+  }
+) {
+  return apiRequest<{
+    success: boolean
+    driver: ManagedDriver
+  }>(
+    `/api/v1/smart-bus/management/drivers/${encodeURIComponent(username)}`,
+    {
+      method: "PUT",
+      body: JSON.stringify(data),
+    }
+  )
+}
+
+export async function deleteManagedDriver(username: string) {
+  return apiRequest<{
+    success: boolean
+    message: string
+  }>(
+    `/api/v1/smart-bus/management/drivers/${encodeURIComponent(username)}`,
+    {
+      method: "DELETE",
+    }
+  )
 }
 
 
@@ -729,6 +805,18 @@ export async function createManagedBus(
   )
 }
 
+export async function deleteManagedBus(busId: string) {
+  return apiRequest<{
+    success: boolean
+    message: string
+  }>(
+    `/api/v1/smart-bus/management/buses/${encodeURIComponent(busId)}`,
+    {
+      method: "DELETE",
+    }
+  )
+}
+
 
 // =========================================================
 // STUDENT MANAGEMENT
@@ -737,15 +825,17 @@ export async function createManagedBus(
 
 export interface ManagedStudent {
   student_id: string
-
   name: string
-
   email?: string | null
-
   phone?: string | null
-
+  department?: string | null
+  year?: string | null
   assigned_bus?: string | null
-
+  fee_status?: string | null
+  fee_total?: number
+  fee_paid?: number
+  fee_pending?: number
+  fee_valid_until?: string | null
   is_boarded: boolean
 }
 
@@ -775,30 +865,33 @@ export async function getManagedStudents(): Promise<ManagedStudent[]> {
 export async function createManagedStudent(
   data: {
     student_id: string
-
     name: string
-
     email?: string
-
     phone?: string
-
+    department?: string
+    year?: string
+    semester?: string
     assigned_bus?: string
+    fee_total?: number
+    fee_paid?: number
+    fee_valid_until?: string
+    password?: string
   }
 ) {
   return apiRequest<{
     success: boolean
-
     message: string
-
     student: ManagedStudent
+    email_dispatch?: {
+      sent: boolean
+      recipient: string
+      note?: string
+    }
   }>(
     "/api/v1/smart-bus/management/students",
     {
       method: "POST",
-
-      body: JSON.stringify(
-        data
-      ),
+      body: JSON.stringify(data),
     }
   )
 }
@@ -836,6 +929,18 @@ export async function updateManagedStudent(
       body: JSON.stringify(
         data
       ),
+    }
+  )
+}
+
+export async function deleteManagedStudent(studentId: string) {
+  return apiRequest<{
+    success: boolean
+    message: string
+  }>(
+    `/api/v1/smart-bus/management/students/${encodeURIComponent(studentId)}`,
+    {
+      method: "DELETE",
     }
   )
 }

@@ -19,7 +19,7 @@ import {
   AlertTriangle,
   RotateCcw,
 } from "lucide-react"
-import { scanQr, type QRScanResult } from "@/lib/api"
+import { recordAttendanceEvent, type AttendanceEventResult } from "@/lib/api"
 
 export default function SmartTransitHome() {
   const [overview, setOverview] = useState({
@@ -29,7 +29,7 @@ export default function SmartTransitHome() {
     incidents: 0,
   })
 
-  const [testResult, setTestResult] = useState<QRScanResult | null>(null)
+  const [testResult, setTestResult] = useState<AttendanceEventResult | null>(null)
   const [testLoading, setTestLoading] = useState(false)
   const [selectedBus, setSelectedBus] = useState("BUS-03")
   const [selectedStop, setSelectedStop] = useState("Royal Circle")
@@ -97,13 +97,13 @@ export default function SmartTransitHome() {
     setTestLoading(true)
     setTestResult(null)
     try {
-      const result = await scanQr(studentId, selectedBus, selectedStop)
+      const result = await recordAttendanceEvent(studentId, selectedBus, selectedStop)
       setTestResult(result)
     } catch (err: any) {
       setTestResult({
         success: false,
         action: "UNKNOWN",
-        message: err?.message || "Failed to process scan",
+        message: err?.message || "Failed to process entry verification",
       })
     } finally {
       setTestLoading(false)
@@ -135,12 +135,6 @@ export default function SmartTransitHome() {
               Full Dashboard
             </Link>
             <Link
-              href="/qr-scanner"
-              className="px-3 py-1.5 text-xs font-semibold rounded-lg bg-zinc-900 border border-zinc-800 text-zinc-300 hover:text-white hover:border-zinc-700 transition"
-            >
-              QR Scanner
-            </Link>
-            <Link
               href="/console"
               className="px-3 py-1.5 text-xs font-semibold rounded-lg bg-zinc-900 border border-zinc-800 text-zinc-300 hover:text-white hover:border-zinc-700 transition"
             >
@@ -163,7 +157,7 @@ export default function SmartTransitHome() {
           <div className="max-w-3xl space-y-4">
             <div className="inline-flex items-center gap-2 rounded-full border border-emerald-500/30 bg-emerald-500/10 px-3 py-1 text-xs font-semibold text-emerald-400">
               <Radio className="h-3.5 w-3.5 animate-pulse" />
-              All Systems Operational — Port 3000 Unified Node.js Engine
+              All Systems Operational — Unified Full-Stack Architecture
             </div>
 
             <h1 className="text-3xl sm:text-5xl font-extrabold tracking-tight text-white">
@@ -171,7 +165,7 @@ export default function SmartTransitHome() {
             </h1>
 
             <p className="text-sm sm:text-base text-zinc-400 leading-relaxed">
-              Automated transit platform integrating live camera QR verification, Vision facial recognition, real-time IoT driver telemetry, fee auditing, and central fleet dispatch.
+              Automated transit platform integrating contactless entry verification, Vision facial recognition, real-time IoT driver telemetry, fee auditing, and central fleet dispatch.
             </p>
 
             <div className="pt-2 flex flex-wrap gap-3">
@@ -180,12 +174,6 @@ export default function SmartTransitHome() {
                 className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-white text-black font-semibold text-sm hover:bg-zinc-200 transition shadow-sm"
               >
                 Launch Transit Dashboard <ArrowRight className="h-4 w-4" />
-              </Link>
-              <Link
-                href="/qr-scanner"
-                className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-zinc-900 border border-zinc-700/70 text-white font-semibold text-sm hover:bg-zinc-800 transition"
-              >
-                <Ticket className="h-4 w-4 text-emerald-400" /> Open Camera Scanner
               </Link>
               <Link
                 href="/console"
@@ -236,10 +224,10 @@ export default function SmartTransitHome() {
                 <Zap className="h-4 w-4" /> Live Verification Sandbox
               </div>
               <h2 className="text-xl sm:text-2xl font-bold text-white mt-1">
-                Simulate Student QR & RFID Scans
+                Verify Student Transit Entry & Attendance
               </h2>
               <p className="text-xs sm:text-sm text-zinc-400 mt-0.5">
-                Test boarding validation, fee auditing, and pass status enforcement against the real in-memory transit engine.
+                Test boarding entry verification, exit recording, and fee compliance checks directly against MongoDB persistence.
               </p>
             </div>
 
@@ -251,9 +239,9 @@ export default function SmartTransitHome() {
                   onChange={(e) => setSelectedBus(e.target.value)}
                   className="bg-zinc-900 border border-zinc-800 rounded-lg px-3 py-1.5 text-xs text-white outline-none focus:border-emerald-500"
                 >
-                  <option value="BUS-03">BUS-03 (Cantonment to Campus)</option>
-                  <option value="BUS-07">BUS-07 (Infantry Road to Campus)</option>
-                  <option value="BUS-12">BUS-12 (Express Route)</option>
+                  <option value="BUS-01">BUS-01 (Cantonment to Main Campus)</option>
+                  <option value="BUS-03">BUS-03 (Gandhi Nagar to Siruguppa Rd)</option>
+                  <option value="BUS-07">BUS-07 (Railway Station to Campus Hub)</option>
                 </select>
               </div>
               <div>
@@ -309,7 +297,7 @@ export default function SmartTransitHome() {
                       : "bg-amber-500/20 text-amber-300 border border-amber-500/40 hover:bg-amber-500/30"
                   }`}
                 >
-                  <ScanFace className="h-3.5 w-3.5" /> Simulate Scan
+                  <ScanFace className="h-3.5 w-3.5" /> Verify Entry / Exit
                 </button>
               </div>
             ))}
@@ -380,19 +368,19 @@ export default function SmartTransitHome() {
           <div className="bg-zinc-950 rounded-2xl border border-zinc-800 p-6 flex flex-col justify-between">
             <div className="space-y-3">
               <div className="h-10 w-10 rounded-xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-emerald-400">
-                <Ticket className="h-5 w-5" />
+                <BusFront className="h-5 w-5" />
               </div>
-              <h3 className="text-lg font-bold text-white">Live Camera QR Scanner</h3>
+              <h3 className="text-lg font-bold text-white">Live Fleet GPS & Routes</h3>
               <p className="text-xs text-zinc-400 leading-relaxed">
-                Mountable tablet or mobile boarding scanner. Uses device camera or image drag-and-drop to instantaneously read student ID codes, verify fees, and record GPS stop timestamps.
+                Real-time transit telemetry streaming live coordinate coordinates, speeds, headings, and reverse geocoded area information into MongoDB.
               </p>
             </div>
             <div className="pt-6">
               <Link
-                href="/qr-scanner"
+                href="/dashboard"
                 className="inline-flex items-center gap-1.5 text-xs font-semibold text-emerald-400 hover:text-emerald-300 transition"
               >
-                Open Camera Scanner <ChevronRight className="h-4 w-4" />
+                View Fleet Map <ChevronRight className="h-4 w-4" />
               </Link>
             </div>
           </div>

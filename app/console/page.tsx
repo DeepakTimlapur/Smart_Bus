@@ -30,14 +30,14 @@ const nav = [
   ["Students", Users],
   ["Passengers", CircleUserRound],
   ["Fleet", BusFront],
-  ["QR Passes", Ticket],
+  ["Transit Gate", ShieldCheck],
   ["Analytics", Gauge],
   ["Event Log", Activity],
 ] as const
 
 const events = [
   ["08:44:11", "FACE VERIFIED", "3BR23CD016", "success"],
-  ["08:43:02", "QR PASS SCANNED", "3BR23CD021", "success"],
+  ["08:43:02", "ENTRY VERIFIED", "3BR23CD021", "success"],
   ["08:42:28", "BUS-03 GPS UPDATE", "ROYAL CIRCLE", "info"],
   ["08:41:09", "ROUTE CHECKPOINT", "CANTONMENT", "info"],
 ]
@@ -158,9 +158,9 @@ export default function Console() {
             Full Dashboard
           </Link>
 
-          <Link href="/qr-scanner" className="console-link">
+          <Link href="/dashboard" className="console-link">
             <Ticket />
-            QR Scanner
+            Attendance Terminal
           </Link>
 
           <button

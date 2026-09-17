@@ -104,11 +104,11 @@ export default function LoginPage() {
 
       if (err instanceof DOMException && err.name === "AbortError") {
         setError(
-          "Login request timed out. Please make sure the FastAPI backend is running."
+          "Login request timed out. Please try again."
         )
       } else if (err instanceof TypeError) {
         setError(
-          "Cannot connect to the backend. Make sure FastAPI is running on port 8000."
+          "Cannot connect to the server. Please verify your connection."
         )
       } else {
         setError(
