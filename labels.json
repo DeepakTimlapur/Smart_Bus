@@ -1,0 +1,50 @@
+{
+  "3BR23CD016": {
+    "name": "Deepak K",
+    "department": "Computer Science (Data Science)",
+    "semester": 6,
+    "phone": "+91 98765 43210",
+    "assigned_bus": "BUS-03",
+    "route": "BITM-R01 (Cantonment to Campus)",
+    "assigned_stop": "Royal Circle",
+    "fee_status": "PAID",
+    "pass_status": "ACTIVE",
+    "image": "deepak.png"
+  },
+  "3BR23EC045": {
+    "name": "Anita M",
+    "department": "Electronics & Communication",
+    "semester": 6,
+    "phone": "+91 98765 43211",
+    "assigned_bus": "BUS-07",
+    "route": "BITM-R02 (Infantry Road to Campus)",
+    "assigned_stop": "Sudha Cross",
+    "fee_status": "PAID",
+    "pass_status": "ACTIVE",
+    "image": "anita.png"
+  },
+  "3BR23CS089": {
+    "name": "Kiran Kumar",
+    "department": "Computer Science",
+    "semester": 4,
+    "phone": "+91 98765 43212",
+    "assigned_bus": "BUS-03",
+    "route": "BITM-R01 (Cantonment to Campus)",
+    "assigned_stop": "DC Office",
+    "fee_status": "UNPAID",
+    "pass_status": "ACTIVE",
+    "image": "d1.png"
+  },
+  "3BR23ME012": {
+    "name": "Rahul Verma",
+    "department": "Mechanical Engineering",
+    "semester": 6,
+    "phone": "+91 98765 43213",
+    "assigned_bus": "BUS-03",
+    "route": "BITM-R01 (Cantonment to Campus)",
+    "assigned_stop": "KSRTC Bus Stand",
+    "fee_status": "PAID",
+    "pass_status": "EXPIRED",
+    "image": "d2.png"
+  }
+}
