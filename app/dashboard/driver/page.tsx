@@ -1,7 +1,7 @@
 "use client"
 
-import { useEffect, useState } from "react"
-import { useRouter } from "next/navigation"
+import { useEffect, useState, Suspense } from "react"
+import { useRouter, useSearchParams } from "next/navigation"
 import Link from "next/link"
 import {
   Bus as BusIcon,
@@ -12,6 +12,7 @@ import {
   Loader2,
   ShieldAlert,
   ArrowRight,
+  Eye,
 } from "lucide-react"
 import {
   getCurrentUser,
@@ -22,8 +23,21 @@ import {
 } from "@/lib/api"
 import DriverDashboard from "@/components/smart-bus/DriverDashboard"
 
-export default function DriverDashboardPage() {
+function DriverDashboardContent() {
   const router = useRouter()
+  const searchParams = useSearchParams()
+  const tabParam = searchParams.get("tab")
+  const initialTab =
+    tabParam === "face" || tabParam === "face-recognition"
+      ? "face"
+      : tabParam === "gps"
+      ? "gps"
+      : tabParam === "manifest"
+      ? "manifest"
+      : tabParam === "cockpit"
+      ? "cockpit"
+      : "all"
+
   const [currentUser, setCurrentUser] = useState<CurrentUser | null>(null)
   const [loading, setLoading] = useState(true)
   const [unauthorizedRole, setUnauthorizedRole] = useState<string | null>(null)
@@ -196,6 +210,16 @@ export default function DriverDashboardPage() {
           </div>
 
           <div className="flex items-center gap-3">
+            {/* Direct Face Recognition Link */}
+            <Link
+              id="header-link-face-recognition"
+              href="/dashboard/driver/face-recognition"
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 text-xs font-bold transition"
+            >
+              <Eye className="h-3.5 w-3.5" />
+              <span>Face Scanner</span>
+            </Link>
+
             {/* User Badge */}
             <div className={`hidden sm:flex items-center gap-2.5 px-3 py-1.5 rounded-xl border ${
               darkMode ? "bg-zinc-900 border-zinc-800" : "bg-slate-100 border-slate-200"
@@ -244,8 +268,24 @@ export default function DriverDashboardPage() {
             assigned_bus: currentUser.assigned_bus || "BUS-03",
             role: currentUser.role,
           }}
+          initialTab={initialTab}
         />
       </main>
     </div>
+  )
+}
+
+export default function DriverDashboardPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="min-h-screen bg-zinc-950 flex items-center justify-center text-zinc-400">
+          <Loader2 className="h-6 w-6 animate-spin text-amber-400 mr-2" />
+          <span>Loading Driver Dashboard...</span>
+        </div>
+      }
+    >
+      <DriverDashboardContent />
+    </Suspense>
   )
 }

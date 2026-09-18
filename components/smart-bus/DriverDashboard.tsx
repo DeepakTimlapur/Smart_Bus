@@ -15,6 +15,8 @@ import {
   RefreshCw,
   Phone,
   Shield,
+  Eye,
+  Navigation,
 } from "lucide-react"
 import {
   recordAttendanceEvent,
@@ -38,10 +40,12 @@ interface DriverDashboardProps {
     assigned_bus?: string | null
     role: string
   }
+  initialTab?: "all" | "face" | "cockpit" | "gps" | "manifest"
 }
 
-export default function DriverDashboard({ user }: DriverDashboardProps) {
+export default function DriverDashboard({ user, initialTab = "all" }: DriverDashboardProps) {
   const assignedBusId = user.assigned_bus || "BUS-01"
+  const [activeTab, setActiveTab] = useState<"all" | "face" | "cockpit" | "gps" | "manifest">(initialTab)
 
   const [busDetails, setBusDetails] = useState<Bus | null>(null)
   const [attendanceList, setAttendanceList] = useState<Attendance[]>([])
@@ -155,29 +159,114 @@ export default function DriverDashboard({ user }: DriverDashboardProps) {
           </div>
         </div>
 
+        <div className="flex flex-wrap items-center gap-2.5">
+          <button
+            id="btn-nav-face-recognition"
+            onClick={() => setActiveTab("face")}
+            className="flex items-center gap-2 px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold shadow-md shadow-emerald-950/50 transition"
+          >
+            <Eye className="h-4 w-4" />
+            Face Recognition
+          </button>
+          <button
+            onClick={loadBusData}
+            disabled={loading}
+            className="flex items-center gap-2 px-4 py-2 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-zinc-200 text-sm font-medium border border-zinc-700 transition"
+          >
+            <RefreshCw className={`h-4 w-4 ${loading ? "animate-spin text-amber-400" : ""}`} />
+            Sync Fleet State
+          </button>
+        </div>
+      </div>
+
+      {/* Driver Dashboard Navigation Tab Bar */}
+      <div className="flex flex-wrap items-center gap-2 p-1.5 rounded-2xl bg-zinc-900/80 border border-zinc-800">
         <button
-          onClick={loadBusData}
-          disabled={loading}
-          className="flex items-center gap-2 px-4 py-2 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-zinc-200 text-sm font-medium border border-zinc-700 transition"
+          id="tab-face-recognition"
+          onClick={() => setActiveTab("face")}
+          className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold transition ${
+            activeTab === "face"
+              ? "bg-emerald-600 text-white shadow-md shadow-emerald-950/40"
+              : "text-zinc-400 hover:text-white hover:bg-zinc-800"
+          }`}
         >
-          <RefreshCw className={`h-4 w-4 ${loading ? "animate-spin text-amber-400" : ""}`} />
-          Refresh Fleet State
+          <Eye className="h-4 w-4 text-emerald-400" />
+          <span>Face Recognition</span>
+          <span className="px-1.5 py-0.5 rounded-full text-[10px] bg-emerald-500/20 text-emerald-300 font-mono">
+            4-Face
+          </span>
+        </button>
+
+        <button
+          id="tab-cockpit"
+          onClick={() => setActiveTab("cockpit")}
+          className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold transition ${
+            activeTab === "cockpit"
+              ? "bg-amber-600 text-white shadow-md shadow-amber-950/40"
+              : "text-zinc-400 hover:text-white hover:bg-zinc-800"
+          }`}
+        >
+          <BusIcon className="h-4 w-4 text-amber-400" />
+          <span>Cockpit & Occupancy</span>
+        </button>
+
+        <button
+          id="tab-gps"
+          onClick={() => setActiveTab("gps")}
+          className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold transition ${
+            activeTab === "gps"
+              ? "bg-indigo-600 text-white shadow-md shadow-indigo-950/40"
+              : "text-zinc-400 hover:text-white hover:bg-zinc-800"
+          }`}
+        >
+          <Radio className="h-4 w-4 text-indigo-400" />
+          <span>GPS Telemetry</span>
+        </button>
+
+        <button
+          id="tab-manifest"
+          onClick={() => setActiveTab("manifest")}
+          className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold transition ${
+            activeTab === "manifest"
+              ? "bg-sky-600 text-white shadow-md shadow-sky-950/40"
+              : "text-zinc-400 hover:text-white hover:bg-zinc-800"
+          }`}
+        >
+          <Users className="h-4 w-4 text-sky-400" />
+          <span>Student Manifest</span>
+        </button>
+
+        <button
+          id="tab-all-views"
+          onClick={() => setActiveTab("all")}
+          className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold ml-auto transition ${
+            activeTab === "all"
+              ? "bg-zinc-800 text-zinc-100 border border-zinc-700"
+              : "text-zinc-500 hover:text-zinc-300 hover:bg-zinc-900"
+          }`}
+        >
+          <span>All Views</span>
         </button>
       </div>
 
       {/* Multi-Face Recognition Entrance Module (Up to 4 Simultaneous Faces) */}
-      <DriverFaceRecognition
-        busId={assignedBusId}
-        currentStop={stopInput}
-        currentPassengers={currentPassengers}
-        capacity={capacity}
-        onAttendanceUpdated={loadBusData}
-      />
+      {(activeTab === "face" || activeTab === "all") && (
+        <div id="section-face-recognition">
+          <DriverFaceRecognition
+            busId={assignedBusId}
+            currentStop={stopInput}
+            currentPassengers={currentPassengers}
+            capacity={capacity}
+            onAttendanceUpdated={loadBusData}
+          />
+        </div>
+      )}
 
       {/* Grid: 1. Bus Occupancy Status, 2. Non-QR Entry Terminal */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Unit Status & Occupancy Meter */}
-        <div className="rounded-2xl border border-zinc-800 bg-zinc-900/60 p-6 flex flex-col justify-between">
+      {(activeTab === "cockpit" || activeTab === "all") && (
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          {/* Unit Status & Occupancy Meter */}
+          <div className="rounded-2xl border border-zinc-800 bg-zinc-900/60 p-6 flex flex-col justify-between">
           <div>
             <div className="flex items-center justify-between">
               <h3 className="text-lg font-bold text-white flex items-center gap-2">
@@ -348,21 +437,27 @@ export default function DriverDashboard({ user }: DriverDashboardProps) {
           </div>
         </div>
       </div>
+      )}
 
       {/* GPS Broadcaster Component */}
-      <div className="rounded-2xl border border-zinc-800 bg-zinc-900/60 p-6">
-        <h3 className="text-lg font-bold text-white mb-2 flex items-center gap-2">
-          <Radio className="h-5 w-5 text-emerald-400 animate-pulse" />
-          Live GPS Telemetry Broadcaster
-        </h3>
-        <p className="text-xs text-zinc-400 mb-4">
-          Broadcast high-accuracy GPS coordinates, speed, and heading to the transit operations center.
-        </p>
-        <DriverGPS busId={assignedBusId} />
-      </div>
+      {(activeTab === "gps" || activeTab === "all") && (
+        <div id="section-gps" className="rounded-2xl border border-zinc-800 bg-zinc-900/60 p-6">
+          <h3 className="text-lg font-bold text-white mb-2 flex items-center gap-2">
+            <Radio className="h-5 w-5 text-emerald-400 animate-pulse" />
+            Live GPS Telemetry Broadcaster
+          </h3>
+          <p className="text-xs text-zinc-400 mb-4">
+            Broadcast high-accuracy GPS coordinates, speed, and heading to the transit operations center.
+          </p>
+          <DriverGPS busId={assignedBusId} />
+        </div>
+      )}
 
-      {/* Assigned Students Roster (Quick 1-Click Boarding) */}
-      <div className="rounded-2xl border border-zinc-800 bg-zinc-900/60 p-6">
+      {/* Assigned Students Roster & Attendance Logs */}
+      {(activeTab === "manifest" || activeTab === "all") && (
+        <>
+          {/* Assigned Students Roster (Quick 1-Click Boarding) */}
+          <div id="section-manifest" className="rounded-2xl border border-zinc-800 bg-zinc-900/60 p-6">
         <div className="flex items-center justify-between mb-4">
           <div>
             <h3 className="text-lg font-bold text-white">
@@ -509,6 +604,8 @@ export default function DriverDashboard({ user }: DriverDashboardProps) {
           </div>
         )}
       </div>
+      </>
+      )}
     </div>
   )
 }

@@ -479,14 +479,27 @@ export default function FaceRegistration({
                     </p>
                   </div>
                 ) : (
-                  <button
-                    id="btn-request-reregistration"
-                    onClick={() => setShowReregModal(true)}
-                    className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-zinc-200 text-xs font-semibold border border-zinc-700 transition shadow-sm"
-                  >
-                    <RefreshCw className="h-3.5 w-3.5" />
-                    Request Re-registration
-                  </button>
+                  <div className="flex flex-col sm:flex-row gap-2">
+                    <button
+                      id="btn-re-register-face"
+                      onClick={() => {
+                        setCameraActive(true)
+                        startCamera()
+                      }}
+                      className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold shadow-sm transition"
+                    >
+                      <Camera className="h-3.5 w-3.5" />
+                      Update Face Biometrics
+                    </button>
+                    <button
+                      id="btn-request-reregistration"
+                      onClick={() => setShowReregModal(true)}
+                      className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-zinc-200 text-xs font-semibold border border-zinc-700 transition shadow-sm"
+                    >
+                      <RefreshCw className="h-3.5 w-3.5" />
+                      Request Re-registration
+                    </button>
+                  </div>
                 )}
                 <span className="text-[11px] text-zinc-500 mt-2 text-right">
                   Only one face profile can be active per student

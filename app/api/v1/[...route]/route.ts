@@ -375,6 +375,15 @@ export async function GET(
     return NextResponse.json({ attendance, count: attendance.length })
   }
 
+  // 13b. Emergencies / Safety Alerts
+  if (pathStr === "smart-bus/emergencies" || pathStr === "emergencies") {
+    return NextResponse.json({
+      emergencies: [],
+      count: 0,
+      status: "clear",
+    })
+  }
+
   // 14. Live Passengers List
   if (pathStr === "smart-bus/passengers") {
     const busId = req.nextUrl.searchParams.get("bus_id") || "BUS-01"
@@ -384,16 +393,18 @@ export async function GET(
   }
 
   // 15. Face Recognition: Student Face Status
-  if (pathStr === "smart-bus/face/status") {
+  if (pathStr === "smart-bus/face/status" || pathStr === "faces/status" || pathStr.startsWith("faces/status/")) {
     const user = await getAuthUser(authHeader)
     if (!user) {
       return NextResponse.json({ detail: "Your session has expired. Please log in again." }, { status: 401 })
     }
 
+    const pathParamStudentId = pathStr.startsWith("faces/status/") ? pathStr.split("/")[2] : null
     const targetStudentId =
-      user.role === "STUDENT"
+      pathParamStudentId ||
+      (user.role === "STUDENT"
         ? (user.student_id || user.username)
-        : (req.nextUrl.searchParams.get("student_id") || user.student_id || user.username)
+        : (req.nextUrl.searchParams.get("student_id") || user.student_id || user.username))
 
     const status = await serverDb.getFaceStatus(targetStudentId)
     if (!status) {
@@ -403,7 +414,7 @@ export async function GET(
   }
 
   // 16. Face Recognition: Admin Re-registration Requests List
-  if (pathStr === "smart-bus/face/reregistration-requests") {
+  if (pathStr === "smart-bus/face/reregistration-requests" || pathStr === "faces/reregistration-requests") {
     const user = await getAuthUser(authHeader)
     if (!user) {
       return NextResponse.json({ detail: "Your session has expired. Please log in again." }, { status: 401 })
@@ -417,7 +428,7 @@ export async function GET(
   }
 
   // 17. Face Recognition: Admin Face Stats
-  if (pathStr === "smart-bus/face/stats") {
+  if (pathStr === "smart-bus/face/stats" || pathStr === "faces/stats") {
     const user = await getAuthUser(authHeader)
     if (!user) {
       return NextResponse.json({ detail: "Your session has expired. Please log in again." }, { status: 401 })
@@ -745,7 +756,7 @@ export async function POST(
   }
 
   // 9. Face Recognition: Student Face Registration
-  if (pathStr === "smart-bus/face/register") {
+  if (pathStr === "smart-bus/face/register" || pathStr === "faces/register") {
     const user = await getAuthUser(authHeader)
     if (!user) {
       return NextResponse.json({ detail: "Your session has expired. Please log in again." }, { status: 401 })
@@ -777,7 +788,7 @@ export async function POST(
   }
 
   // 10. Face Recognition: Student Re-registration Request
-  if (pathStr === "smart-bus/face/reregistration-request") {
+  if (pathStr === "smart-bus/face/reregistration-request" || pathStr === "faces/reregistration-request") {
     const user = await getAuthUser(authHeader)
     if (!user) {
       return NextResponse.json({ detail: "Your session has expired. Please log in again." }, { status: 401 })
@@ -798,7 +809,7 @@ export async function POST(
   }
 
   // 11. Face Recognition: Admin Re-registration Approval
-  if (pathStr === "smart-bus/face/reregistration-approve") {
+  if (pathStr === "smart-bus/face/reregistration-approve" || pathStr === "faces/reregistration-approve") {
     const user = await getAuthUser(authHeader)
     if (!user) {
       return NextResponse.json({ detail: "Your session has expired. Please log in again." }, { status: 401 })
@@ -823,7 +834,7 @@ export async function POST(
   }
 
   // 12. Face Recognition: Driver Multi-Face Processing (Up to 4 faces simultaneously)
-  if (pathStr === "smart-bus/face/recognize") {
+  if (pathStr === "smart-bus/face/recognize" || pathStr === "faces/recognize" || pathStr === "faces/recognize-multi") {
     const user = await getAuthUser(authHeader)
     if (!user) {
       return NextResponse.json({ detail: "Your session has expired. Please log in again." }, { status: 401 })

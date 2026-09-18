@@ -18,6 +18,7 @@ import {
   Info,
   Clock,
   UserCheck,
+  User,
 } from "lucide-react"
 import {
   recognizeFacesBatch,
@@ -318,6 +319,26 @@ export default function DriverFaceRecognition({
     onAttendanceUpdated()
   }
 
+  // 1-Student Entrance Test Simulation (Anita Sharma - Registered & Paid)
+  const handleSimulateSingleStudent = async () => {
+    setProcessing(true)
+    setScanNotice("[Simulation] Simulating 1 registered student (Anita Sharma) entering the bus...")
+    try {
+      const simulatedFaces = [
+        {
+          embedding: generateCanonicalFaceEmbedding("3BR23EC045"),
+          bbox: { x: 120, y: 50, width: 140, height: 180 },
+        },
+      ]
+      const res = await recognizeFacesBatch(busId, currentStop, simulatedFaces)
+      updateRecognitionResults(res)
+    } catch (err: any) {
+      setScanNotice("Error: " + (err?.detail || err?.message))
+    } finally {
+      setProcessing(false)
+    }
+  }
+
   // Multi-Student Entrance Test Simulation (Tests 4 simultaneous students entering at once!)
   // Student 1: Anita Sharma (3BR23EC045 - Registered & Paid)
   // Student 2: Deepak Kumar (3BR23CD016 - CS Dept)
@@ -325,7 +346,7 @@ export default function DriverFaceRecognition({
   // Student 4: Unregistered Person (Unknown)
   const handleSimulateMultiStudentEntrance = async () => {
     setProcessing(true)
-    setScanNotice("Simulating 4 students entering the bus simultaneously...")
+    setScanNotice("[Simulation] Simulating 4 students entering the bus simultaneously...")
 
     try {
       const simulatedFaces = [
@@ -364,7 +385,7 @@ export default function DriverFaceRecognition({
   // Alternative simulation: Anita & Kiran (Valid 2 students)
   const handleSimulateValidPair = async () => {
     setProcessing(true)
-    setScanNotice("Simulating 2 registered students entering together...")
+    setScanNotice("[Simulation] Simulating 2 registered students entering together...")
     try {
       const simulatedFaces = [
         {
@@ -550,34 +571,47 @@ export default function DriverFaceRecognition({
       )}
 
       {/* Entrance Multi-Student Test Simulation Bar */}
-      <div className="p-4 rounded-xl bg-zinc-950/60 border border-zinc-800/80 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+      <div className="p-4 rounded-xl bg-zinc-950/80 border border-zinc-800 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div className="space-y-0.5">
           <div className="flex items-center gap-2 text-xs font-semibold text-white">
             <Sparkles className="h-3.5 w-3.5 text-indigo-400" />
-            <span>Simultaneous 4-Face Entrance Test Simulation</span>
+            <span>Biometric Simulation Test Suite [No Physical Webcam Required]</span>
           </div>
           <p className="text-[11px] text-zinc-400">
-            Test simultaneous recognition of 4 students entering the bus together (Paid, Pending Fee, & Unregistered).
+            Simulate 1, 2, or 4 simultaneous students entering at the terminal door to test real-time fee verification & seat count.
           </p>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <button
-            id="btn-simulate-4-faces"
-            onClick={handleSimulateMultiStudentEntrance}
+            id="btn-simulate-1-face"
+            onClick={handleSimulateSingleStudent}
             disabled={processing}
-            className="flex items-center gap-1.5 px-3.5 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold shadow-sm transition"
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-200 text-xs font-medium border border-zinc-700 transition"
+            title="Simulate 1 registered student (Anita Sharma) entering"
           >
-            <Users className="h-3.5 w-3.5" />
-            Test 4 Entering Students
+            <User className="h-3.5 w-3.5" />
+            Test 1 Student
           </button>
           <button
             id="btn-simulate-2-faces"
             onClick={handleSimulateValidPair}
             disabled={processing}
-            className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-200 text-xs font-medium border border-zinc-700 transition"
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-200 text-xs font-medium border border-zinc-700 transition"
+            title="Simulate 2 registered students (Anita & Kiran) entering"
           >
+            <Users className="h-3.5 w-3.5" />
             Test 2 Students
+          </button>
+          <button
+            id="btn-simulate-4-faces"
+            onClick={handleSimulateMultiStudentEntrance}
+            disabled={processing}
+            className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold shadow-sm transition"
+            title="Simulate 4 simultaneous students (Paid, Fee Expired, & Unregistered)"
+          >
+            <Sparkles className="h-3.5 w-3.5" />
+            Test 4 Students
           </button>
         </div>
       </div>

@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useEffect, useState, Suspense } from "react"
 import { useRouter } from "next/navigation"
 import Link from "next/link"
 import {
@@ -12,6 +12,7 @@ import {
   Loader2,
   ShieldAlert,
   ArrowRight,
+  ArrowLeft,
   Eye,
 } from "lucide-react"
 import {
@@ -21,9 +22,9 @@ import {
   clearAuthSession,
   type CurrentUser,
 } from "@/lib/api"
-import StudentDashboard from "@/components/smart-bus/StudentDashboard"
+import DriverDashboard from "@/components/smart-bus/DriverDashboard"
 
-export default function StudentDashboardPage() {
+function DriverFaceRecognitionContent() {
   const router = useRouter()
   const [currentUser, setCurrentUser] = useState<CurrentUser | null>(null)
   const [loading, setLoading] = useState(true)
@@ -33,7 +34,7 @@ export default function StudentDashboardPage() {
   useEffect(() => {
     let isMounted = true
 
-    async function checkStudentAuth() {
+    async function checkDriverAuth() {
       setUnauthorizedRole(null)
 
       // 1. Fast path: check localStorage first
@@ -46,21 +47,21 @@ export default function StudentDashboardPage() {
         return
       }
 
-      // Drivers cannot access student pass dashboard
-      if (storedUser && storedUser.role === "DRIVER") {
+      // If stored role is STUDENT, block immediately
+      if (storedUser && storedUser.role === "STUDENT") {
         setUnauthorizedRole(storedUser.role)
         setCurrentUser(storedUser)
         setLoading(false)
         return
       }
 
-      // If stored role is STUDENT or ADMIN, render immediately
-      if (storedUser && (storedUser.role === "STUDENT" || storedUser.role === "ADMIN")) {
+      // If stored role is DRIVER or ADMIN, render immediately without waiting
+      if (storedUser && (storedUser.role === "DRIVER" || storedUser.role === "ADMIN")) {
         setCurrentUser(storedUser)
         setLoading(false)
       }
 
-      // 2. Validate/refresh session with server (with timeout race to never hang)
+      // 2. Validate/refresh session with server
       try {
         const timeoutPromise = new Promise<never>((_, reject) =>
           setTimeout(() => reject(new Error("Auth request timeout")), 4000)
@@ -75,8 +76,8 @@ export default function StudentDashboardPage() {
           return
         }
 
-        // Drivers cannot access student pass
-        if (user.role === "DRIVER") {
+        // Students cannot access Driver face recognition terminal
+        if (user.role === "STUDENT") {
           setUnauthorizedRole(user.role)
           setCurrentUser(user)
           setLoading(false)
@@ -87,9 +88,7 @@ export default function StudentDashboardPage() {
       } catch (err: any) {
         if (!isMounted) return
 
-        // If we already have a valid student profile from localStorage, preserve access
-        if (storedUser && (storedUser.role === "STUDENT" || storedUser.role === "ADMIN")) {
-          console.warn("[Student Dashboard] Auth refresh slow or offline, using stored session:", err)
+        if (storedUser && (storedUser.role === "DRIVER" || storedUser.role === "ADMIN")) {
           setCurrentUser(storedUser)
           setLoading(false)
           return
@@ -104,7 +103,7 @@ export default function StudentDashboardPage() {
       }
     }
 
-    checkStudentAuth()
+    checkDriverAuth()
 
     return () => {
       isMounted = false
@@ -122,11 +121,11 @@ export default function StudentDashboardPage() {
     return (
       <div className="min-h-screen bg-zinc-950 flex flex-col items-center justify-center text-zinc-300 p-4">
         <div className="h-12 w-12 rounded-2xl bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-center text-emerald-400 mb-4 animate-pulse">
-          <BusIcon className="h-6 w-6" />
+          <Eye className="h-6 w-6" />
         </div>
         <div className="flex items-center gap-2 text-sm font-medium">
           <Loader2 className="h-4 w-4 animate-spin text-emerald-400" />
-          <span>Authenticating Student Pass Session...</span>
+          <span>Opening Driver Biometric Recognition Terminal...</span>
         </div>
       </div>
     )
@@ -145,16 +144,16 @@ export default function StudentDashboardPage() {
             You are not authorized to access this section.
           </p>
           <p className="text-xs text-zinc-400 mt-1">
-            Student privileges are required for this transport pass. You are currently logged in as a{" "}
+            Driver privileges are required for the multi-face entrance terminal. You are currently logged in as a{" "}
             <span className="font-semibold text-white uppercase">{unauthorizedRole}</span>.
           </p>
 
           <div className="mt-6 space-y-2.5">
             <Link
-              href="/dashboard/driver"
-              className="w-full py-3 rounded-xl bg-amber-600 hover:bg-amber-500 text-white font-semibold text-sm transition flex items-center justify-center gap-2 shadow-lg"
+              href="/dashboard/student"
+              className="w-full py-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-semibold text-sm transition flex items-center justify-center gap-2 shadow-lg"
             >
-              <span>Go to Driver Cockpit</span>
+              <span>Go to Student Dashboard</span>
               <ArrowRight className="h-4 w-4" />
             </Link>
 
@@ -162,7 +161,7 @@ export default function StudentDashboardPage() {
               onClick={handleLogout}
               className="w-full py-2.5 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-zinc-300 text-xs font-semibold transition block text-center"
             >
-              Sign In with Student Account
+              Sign In with Driver Account
             </button>
           </div>
         </div>
@@ -180,31 +179,30 @@ export default function StudentDashboardPage() {
       }`}>
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <Link href="/" className="flex items-center gap-2.5 group">
+            <Link href="/dashboard/driver" className="flex items-center gap-2.5 group">
               <div className="h-10 w-10 rounded-xl bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-center text-emerald-400 group-hover:scale-105 transition">
-                <BusIcon className="h-5 w-5" />
+                <Eye className="h-5 w-5" />
               </div>
               <div>
                 <span className="font-extrabold tracking-tight text-base block leading-tight">
-                  SMART BUS <span className="text-emerald-400">TRANSIT</span>
+                  SMART BUS <span className="text-emerald-400">BIOMETRICS</span>
                 </span>
                 <span className="text-[10px] text-zinc-400 font-mono tracking-wider uppercase block">
-                  Student Digital Pass &bull; Live Tracker
+                  Multi-Face Entrance Scanner &bull; {currentUser.assigned_bus || "BUS-03"}
                 </span>
               </div>
             </Link>
           </div>
 
           <div className="flex items-center gap-3">
-            {/* Face Registration Direct Link */}
-            <a
-              id="header-link-student-face"
-              href="#student-face-registration-module"
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-indigo-500/10 hover:bg-indigo-500/20 text-indigo-400 border border-indigo-500/30 text-xs font-bold transition"
+            {/* Back to Cockpit Link */}
+            <Link
+              href="/dashboard/driver"
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-zinc-200 text-xs font-medium border border-zinc-700 transition"
             >
-              <Eye className="h-3.5 w-3.5" />
-              <span>Face ID</span>
-            </a>
+              <ArrowLeft className="h-3.5 w-3.5" />
+              <span>Cockpit</span>
+            </Link>
 
             {/* User Badge */}
             <div className={`hidden sm:flex items-center gap-2.5 px-3 py-1.5 rounded-xl border ${
@@ -213,10 +211,10 @@ export default function StudentDashboardPage() {
               <User className="h-4 w-4 text-zinc-400" />
               <div className="text-left leading-none">
                 <span className="text-xs font-bold block">{currentUser.full_name || currentUser.name || currentUser.username}</span>
-                <span className="text-[10px] text-zinc-500 font-mono">{currentUser.student_id || currentUser.username}</span>
+                <span className="text-[10px] text-zinc-500 font-mono">{currentUser.username}</span>
               </div>
               <span className="ml-1 px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
-                STUDENT
+                DRIVER
               </span>
             </div>
 
@@ -243,21 +241,35 @@ export default function StudentDashboardPage() {
         </div>
       </header>
 
-      {/* Main Student Dashboard View */}
+      {/* Main Driver Face Recognition View */}
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        <StudentDashboard
+        <DriverDashboard
           user={{
             username: currentUser.username,
             name: currentUser.full_name || currentUser.name,
-            student_id: currentUser.student_id || currentUser.username,
             email: currentUser.email,
             phone: currentUser.phone,
-            department: currentUser.department,
-            assigned_bus: currentUser.assigned_bus,
+            assigned_bus: currentUser.assigned_bus || "BUS-03",
             role: currentUser.role,
           }}
+          initialTab="face"
         />
       </main>
     </div>
+  )
+}
+
+export default function DriverFaceRecognitionPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="min-h-screen bg-zinc-950 flex items-center justify-center text-zinc-400">
+          <Loader2 className="h-6 w-6 animate-spin text-emerald-400 mr-2" />
+          <span>Loading Face Recognition Terminal...</span>
+        </div>
+      }
+    >
+      <DriverFaceRecognitionContent />
+    </Suspense>
   )
 }

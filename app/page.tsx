@@ -407,19 +407,25 @@ export default function SmartTransitHome() {
                 </div>
                 <h3 className="text-lg font-bold text-white">Driver Cockpit</h3>
                 <p className="text-xs text-zinc-400 leading-relaxed">
-                  Live bus telemetry console: real-time GPS coordinate broadcasts, route checkpoints, passenger headcount verification, and emergency dispatch alerts.
+                  Live bus telemetry console: real-time GPS coordinate broadcasts, 4-face vision recognition scanner, passenger headcount verification, and emergency dispatch alerts.
                 </p>
                 <div className="text-[11px] text-zinc-500 font-mono">
                   Demo: <span className="text-zinc-300">driver1 / driver123</span>
                 </div>
               </div>
-              <div className="pt-6">
+              <div className="pt-6 space-y-2">
                 <Link
                   href="/dashboard/driver"
                   className="w-full py-2.5 px-4 rounded-xl bg-amber-600 hover:bg-amber-500 text-black font-bold text-xs transition flex items-center justify-center gap-2"
                 >
                   <span>Open Driver Cockpit</span>
                   <ArrowRight className="h-3.5 w-3.5" />
+                </Link>
+                <Link
+                  href="/dashboard/driver/face-recognition"
+                  className="w-full py-2 px-3 rounded-lg bg-zinc-900 hover:bg-zinc-800 border border-zinc-700 text-zinc-300 font-medium text-xs transition flex items-center justify-center gap-2"
+                >
+                  <span>Launch Face Scanner Terminal</span>
                 </Link>
               </div>
             </div>
@@ -437,7 +443,7 @@ export default function SmartTransitHome() {
                 </div>
                 <h3 className="text-lg font-bold text-white">Student Digital Pass</h3>
                 <p className="text-xs text-zinc-400 leading-relaxed">
-                  Personal transit hub: live bus location tracking, digital QR boarding pass, fee receipt verification, route schedules, and attendance history logs.
+                  Personal transit hub: live bus location tracking, biometric face registration, fee receipt verification, route schedules, and attendance history logs.
                 </p>
                 <div className="text-[11px] text-zinc-500 font-mono">
                   Demo: <span className="text-zinc-300">3BR23CD016 / student123</span>

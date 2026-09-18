@@ -1,5 +1,7 @@
 import { MongoClient, Db, Collection } from "mongodb"
 import bcrypt from "bcryptjs"
+import fs from "fs"
+import path from "path"
 import { generateCanonicalFaceEmbedding } from "./face-recognition"
 
 export interface UserDoc {
@@ -159,7 +161,15 @@ function getMongoUri(): string {
   return process.env.MONGODB_URI || "mongodb://localhost:27017"
 }
 
-export function getMongoClientPromise(): Promise<MongoClient> {
+let lastMongoFailTime = 0
+const MONGO_COOLDOWN_MS = 60000
+
+export async function getMongoClientPromise(): Promise<MongoClient> {
+  const now = Date.now()
+  if (now - lastMongoFailTime < MONGO_COOLDOWN_MS) {
+    throw new Error("MongoDB connection cooling down after recent network failure")
+  }
+
   const uri = getMongoUri()
   if (global._mongoClientPromise) {
     return global._mongoClientPromise
@@ -170,8 +180,16 @@ export function getMongoClientPromise(): Promise<MongoClient> {
     connectTimeoutMS: 3000,
   })
 
-  global._mongoClientPromise = client.connect()
-  return global._mongoClientPromise
+  try {
+    global._mongoClientPromise = client.connect()
+    const connected = await global._mongoClientPromise
+    lastMongoFailTime = 0
+    return connected
+  } catch (err) {
+    lastMongoFailTime = Date.now()
+    global._mongoClientPromise = undefined
+    throw err
+  }
 }
 
 // Memory fallback store for environments where MongoDB is temporarily offline or unconfigured
@@ -609,6 +627,54 @@ class MemoryDataStore {
     ]
 
     this.initialized = true
+    this.saveToDisk()
+  }
+
+  saveToDisk() {
+    try {
+      const dataDir = path.join(process.cwd(), "data")
+      if (!fs.existsSync(dataDir)) {
+        fs.mkdirSync(dataDir, { recursive: true })
+      }
+      const dataFilePath = path.join(dataDir, "transit_db.json")
+      const payload = {
+        users: Array.from(this.users.entries()),
+        students: Array.from(this.students.entries()),
+        drivers: Array.from(this.drivers.entries()),
+        buses: Array.from(this.buses.entries()),
+        fees: Array.from(this.fees.entries()),
+        attendance: this.attendance,
+        gpsLocations: this.gpsLocations,
+        faceRequests: Array.from(this.faceRequests.entries()),
+        savedAt: new Date().toISOString(),
+      }
+      fs.writeFileSync(dataFilePath, JSON.stringify(payload, null, 2), "utf8")
+    } catch (err) {
+      // Non-fatal if filesystem is read-only
+    }
+  }
+
+  loadFromDisk(): boolean {
+    try {
+      const dataFilePath = path.join(process.cwd(), "data", "transit_db.json")
+      if (!fs.existsSync(dataFilePath)) return false
+      const raw = fs.readFileSync(dataFilePath, "utf8")
+      const parsed = JSON.parse(raw)
+      if (!parsed || !parsed.users) return false
+
+      this.users = new Map(parsed.users)
+      this.students = new Map(parsed.students)
+      this.drivers = new Map(parsed.drivers)
+      this.buses = new Map(parsed.buses)
+      this.fees = new Map(parsed.fees)
+      this.attendance = Array.isArray(parsed.attendance) ? parsed.attendance : []
+      this.gpsLocations = Array.isArray(parsed.gpsLocations) ? parsed.gpsLocations : []
+      this.faceRequests = new Map(parsed.faceRequests || [])
+      this.initialized = true
+      return true
+    } catch {
+      return false
+    }
   }
 }
 
@@ -675,12 +741,20 @@ export async function withMongo<T>(
   action: (db: Db) => Promise<T>,
   fallbackAction: (store: MemoryDataStore) => Promise<T> | T
 ): Promise<T> {
-  await memoryFallback.seed()
+  // If persistent database exists on disk, load it
+  if (!memoryFallback.initialized) {
+    const loaded = memoryFallback.loadFromDisk()
+    if (!loaded) {
+      await memoryFallback.seed()
+    }
+  }
 
   const uri = process.env.MONGODB_URI?.trim()
   if (!uri || uri.includes("<") || uri.includes(">") || uri.includes("db_password") || uri.includes("your_password")) {
-    // In-memory mock active when external MongoDB is not configured or placeholder
-    return await fallbackAction(memoryFallback)
+    // Persistent local store active
+    const result = await fallbackAction(memoryFallback)
+    memoryFallback.saveToDisk()
+    return result
   }
 
   try {
@@ -689,9 +763,10 @@ export async function withMongo<T>(
     await ensureMongoSeeded(db)
     return await action(db)
   } catch (err) {
-    console.warn("[Smart Transit] MongoDB unavailable, falling back to in-memory store:", err)
-    // Return result from in-memory fallback store
-    return await fallbackAction(memoryFallback)
+    // Return result from durable persistent local store and save changes
+    const result = await fallbackAction(memoryFallback)
+    memoryFallback.saveToDisk()
+    return result
   }
 }
 
