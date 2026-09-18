@@ -47,6 +47,7 @@ import {
   createManagedFee,
   updateManagedFee,
 } from "@/lib/api"
+import AdminFaceManagement from "./AdminFaceManagement"
 
 interface AdminDashboardProps {
   overview: Overview | null
@@ -72,7 +73,7 @@ export default function AdminDashboard({
   onRefreshAll,
 }: AdminDashboardProps) {
   const [activeTab, setActiveTab] = useState<
-    "overview" | "students" | "drivers" | "buses" | "fees" | "attendance"
+    "overview" | "students" | "drivers" | "buses" | "fees" | "attendance" | "face-biometrics"
   >("overview")
 
   const [refreshing, setRefreshing] = useState(false)
@@ -560,6 +561,7 @@ export default function AdminDashboard({
             { id: "buses", label: `Buses (${managedBuses.length})` },
             { id: "fees", label: `Fees (${managedFees.length})` },
             { id: "attendance", label: `Attendance (${attendance.length})` },
+            { id: "face-biometrics", label: "Face Biometrics" },
           ].map((tab) => (
             <button
               key={tab.id}
@@ -1105,6 +1107,14 @@ export default function AdminDashboard({
             </table>
           </div>
         </div>
+      )}
+
+      {/* TAB 7: FACE BIOMETRICS & RE-REGISTRATION MANAGEMENT */}
+      {activeTab === "face-biometrics" && (
+        <AdminFaceManagement
+          students={managedStudents}
+          onRefreshParent={onRefreshAll}
+        />
       )}
 
       {/* --- MODALS --- */}

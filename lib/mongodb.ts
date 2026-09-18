@@ -1,5 +1,6 @@
 import { MongoClient, Db, Collection } from "mongodb"
 import bcrypt from "bcryptjs"
+import { generateCanonicalFaceEmbedding } from "./face-recognition"
 
 export interface UserDoc {
   username: string
@@ -33,8 +34,28 @@ export interface StudentDoc {
   fee_valid_until: string
   account_status: "ACTIVE" | "SUSPENDED"
   is_boarded?: boolean
+  // Face Recognition fields
+  face_registered: boolean
+  face_embedding?: number[] | null
+  face_registered_at?: string | null
+  face_sample_count?: number
+  face_reregistration_requested?: boolean
+  face_reregistration_request_date?: string | null
+  face_reregistration_status?: "NONE" | "PENDING" | "APPROVED" | "REJECTED"
   created_at: string
   updated_at: string
+}
+
+export interface FaceReRegistrationRequestDoc {
+  request_id: string
+  student_id: string
+  student_name: string
+  department: string
+  bus_id: string
+  requested_at: string
+  status: "PENDING" | "APPROVED" | "REJECTED"
+  admin_notes?: string
+  reviewed_at?: string
 }
 
 export interface DriverDoc {
@@ -105,6 +126,8 @@ export interface AttendanceDoc {
   date: string
   time: string
   timestamp: string
+  recognition_result?: string
+  confidence?: number
 }
 
 export interface GpsLocationDoc {
@@ -160,6 +183,7 @@ class MemoryDataStore {
   fees: Map<string, FeeDoc> = new Map()
   attendance: AttendanceDoc[] = []
   gpsLocations: GpsLocationDoc[] = []
+  faceRequests: Map<string, FaceReRegistrationRequestDoc> = new Map()
   initialized = false
 
   async seed() {
@@ -296,6 +320,10 @@ class MemoryDataStore {
         fee_valid_until: "2027-05-31",
         account_status: "ACTIVE",
         is_boarded: false,
+        face_registered: false,
+        face_embedding: null,
+        face_registered_at: null,
+        face_reregistration_status: "NONE",
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
       },
@@ -307,15 +335,19 @@ class MemoryDataStore {
         department: "Electronics & Communication",
         year: "3rd Year",
         semester: "6th Sem",
-        bus_id: "BUS-03",
+        bus_id: "BUS-01",
         pickup_location: "City Centre Circle",
         fee_total: 38000,
-        fee_paid: 20000,
-        fee_pending: 18000,
-        fee_status: "PARTIAL",
+        fee_paid: 38000,
+        fee_pending: 0,
+        fee_status: "PAID",
         fee_valid_until: "2027-05-31",
         account_status: "ACTIVE",
         is_boarded: false,
+        face_registered: true,
+        face_embedding: generateCanonicalFaceEmbedding("3BR23EC045"),
+        face_registered_at: new Date(Date.now() - 86400000 * 2).toISOString(),
+        face_reregistration_status: "NONE",
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
       },
@@ -333,9 +365,13 @@ class MemoryDataStore {
         fee_paid: 0,
         fee_pending: 32000,
         fee_status: "PENDING",
-        fee_valid_until: "2026-01-01", // expired
+        fee_valid_until: "2026-01-01", // expired pass
         account_status: "ACTIVE",
         is_boarded: false,
+        face_registered: true,
+        face_embedding: generateCanonicalFaceEmbedding("3BR23ME012"),
+        face_registered_at: new Date(Date.now() - 86400000 * 3).toISOString(),
+        face_reregistration_status: "NONE",
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
       },
@@ -347,15 +383,19 @@ class MemoryDataStore {
         department: "Computer Science & Engineering",
         year: "2nd Year",
         semester: "3rd Sem",
-        bus_id: "BUS-03",
+        bus_id: "BUS-01",
         pickup_location: "DC Office",
         fee_total: 35000,
-        fee_paid: 0,
-        fee_pending: 35000,
-        fee_status: "PENDING",
-        fee_valid_until: "2026-05-31",
+        fee_paid: 35000,
+        fee_pending: 0,
+        fee_status: "PAID",
+        fee_valid_until: "2027-05-31",
         account_status: "ACTIVE",
         is_boarded: false,
+        face_registered: true,
+        face_embedding: generateCanonicalFaceEmbedding("3BR23CS089"),
+        face_registered_at: new Date(Date.now() - 86400000 * 4).toISOString(),
+        face_reregistration_status: "NONE",
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
       },
@@ -637,12 +677,19 @@ export async function withMongo<T>(
 ): Promise<T> {
   await memoryFallback.seed()
 
+  const uri = process.env.MONGODB_URI?.trim()
+  if (!uri || uri.includes("<") || uri.includes(">") || uri.includes("db_password") || uri.includes("your_password")) {
+    // In-memory mock active when external MongoDB is not configured or placeholder
+    return await fallbackAction(memoryFallback)
+  }
+
   try {
     const client = await getMongoClientPromise()
     const db = client.db(DEFAULT_DB)
     await ensureMongoSeeded(db)
     return await action(db)
-  } catch {
+  } catch (err) {
+    console.warn("[Smart Transit] MongoDB unavailable, falling back to in-memory store:", err)
     // Return result from in-memory fallback store
     return await fallbackAction(memoryFallback)
   }

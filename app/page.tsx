@@ -341,68 +341,117 @@ export default function SmartTransitHome() {
           )}
         </section>
 
-        {/* Modules Grid */}
-        <section className="grid grid-cols-1 md:grid-cols-3 gap-6">
-          {/* Card 1 */}
-          <div className="bg-zinc-950 rounded-2xl border border-zinc-800 p-6 flex flex-col justify-between">
-            <div className="space-y-3">
-              <div className="h-10 w-10 rounded-xl bg-blue-500/10 border border-blue-500/20 flex items-center justify-center text-blue-400">
-                <Gauge className="h-5 w-5" />
+        {/* 3 Role Dedicated Portals - Task 5: Access Features by Role */}
+        <section className="space-y-4">
+          <div className="flex items-center justify-between">
+            <div>
+              <div className="flex items-center gap-2 text-xs font-semibold tracking-wider text-emerald-400 uppercase">
+                <Users className="h-4 w-4" /> Role-Based Access Portals
               </div>
-              <h3 className="text-lg font-bold text-white">Full Operations Dashboard</h3>
-              <p className="text-xs text-zinc-400 leading-relaxed">
-                Central control panel for transit administrators, drivers, and students. Monitor bus occupancy, manage student profiles, configure driver assignments, and track fee balances.
+              <h2 className="text-xl sm:text-2xl font-bold text-white mt-1">
+                Access Transit Features by Institutional Role
+              </h2>
+              <p className="text-xs sm:text-sm text-zinc-400 mt-0.5">
+                Every role has a tailored dashboard with strict access control, real-time data sync, and instant actions.
               </p>
             </div>
-            <div className="pt-6">
-              <Link
-                href="/dashboard"
-                className="inline-flex items-center gap-1.5 text-xs font-semibold text-blue-400 hover:text-blue-300 transition"
-              >
-                Access Dashboard <ChevronRight className="h-4 w-4" />
-              </Link>
-            </div>
+            <Link
+              href="/login"
+              className="hidden sm:inline-flex items-center gap-1.5 text-xs font-semibold text-emerald-400 hover:text-emerald-300 transition"
+            >
+              Switch Account <ChevronRight className="h-4 w-4" />
+            </Link>
           </div>
 
-          {/* Card 2 */}
-          <div className="bg-zinc-950 rounded-2xl border border-zinc-800 p-6 flex flex-col justify-between">
-            <div className="space-y-3">
-              <div className="h-10 w-10 rounded-xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-emerald-400">
-                <BusFront className="h-5 w-5" />
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            {/* Admin Role Card */}
+            <div className="bg-zinc-950 rounded-2xl border border-purple-500/30 p-6 flex flex-col justify-between hover:border-purple-500/50 transition shadow-lg shadow-purple-950/20">
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <div className="h-10 w-10 rounded-xl bg-purple-500/10 border border-purple-500/30 flex items-center justify-center text-purple-400">
+                    <ShieldCheck className="h-5 w-5" />
+                  </div>
+                  <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-purple-500/20 text-purple-300 border border-purple-500/30 uppercase tracking-wider">
+                    ADMIN
+                  </span>
+                </div>
+                <h3 className="text-lg font-bold text-white">Administrator Portal</h3>
+                <p className="text-xs text-zinc-400 leading-relaxed">
+                  Full control center: real-time fleet overview, manage student passes & fees, driver assignments, QR pass generation, and automated SMTP notifications.
+                </p>
+                <div className="text-[11px] text-zinc-500 font-mono">
+                  Demo: <span className="text-zinc-300">admin / admin123</span>
+                </div>
               </div>
-              <h3 className="text-lg font-bold text-white">Live Fleet GPS & Routes</h3>
-              <p className="text-xs text-zinc-400 leading-relaxed">
-                Real-time transit telemetry streaming live coordinate coordinates, speeds, headings, and reverse geocoded area information into MongoDB.
-              </p>
+              <div className="pt-6">
+                <Link
+                  href="/dashboard/admin"
+                  className="w-full py-2.5 px-4 rounded-xl bg-purple-600 hover:bg-purple-500 text-white font-semibold text-xs transition flex items-center justify-center gap-2"
+                >
+                  <span>Open Admin Console</span>
+                  <ArrowRight className="h-3.5 w-3.5" />
+                </Link>
+              </div>
             </div>
-            <div className="pt-6">
-              <Link
-                href="/dashboard"
-                className="inline-flex items-center gap-1.5 text-xs font-semibold text-emerald-400 hover:text-emerald-300 transition"
-              >
-                View Fleet Map <ChevronRight className="h-4 w-4" />
-              </Link>
-            </div>
-          </div>
 
-          {/* Card 3 */}
-          <div className="bg-zinc-950 rounded-2xl border border-zinc-800 p-6 flex flex-col justify-between">
-            <div className="space-y-3">
-              <div className="h-10 w-10 rounded-xl bg-purple-500/10 border border-purple-500/20 flex items-center justify-center text-purple-400">
-                <ScanFace className="h-5 w-5" />
+            {/* Driver Role Card */}
+            <div className="bg-zinc-950 rounded-2xl border border-amber-500/30 p-6 flex flex-col justify-between hover:border-amber-500/50 transition shadow-lg shadow-amber-950/20">
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <div className="h-10 w-10 rounded-xl bg-amber-500/10 border border-amber-500/30 flex items-center justify-center text-amber-400">
+                    <BusFront className="h-5 w-5" />
+                  </div>
+                  <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-amber-500/20 text-amber-300 border border-amber-500/30 uppercase tracking-wider">
+                    DRIVER
+                  </span>
+                </div>
+                <h3 className="text-lg font-bold text-white">Driver Cockpit</h3>
+                <p className="text-xs text-zinc-400 leading-relaxed">
+                  Live bus telemetry console: real-time GPS coordinate broadcasts, route checkpoints, passenger headcount verification, and emergency dispatch alerts.
+                </p>
+                <div className="text-[11px] text-zinc-500 font-mono">
+                  Demo: <span className="text-zinc-300">driver1 / driver123</span>
+                </div>
               </div>
-              <h3 className="text-lg font-bold text-white">Vision & Tactical Console</h3>
-              <p className="text-xs text-zinc-400 leading-relaxed">
-                Tactical monitoring interface displaying real-time simulated facial verification streams, active route checkpoints, passenger registry tables, and emergency dispatch alerts.
-              </p>
+              <div className="pt-6">
+                <Link
+                  href="/dashboard/driver"
+                  className="w-full py-2.5 px-4 rounded-xl bg-amber-600 hover:bg-amber-500 text-black font-bold text-xs transition flex items-center justify-center gap-2"
+                >
+                  <span>Open Driver Cockpit</span>
+                  <ArrowRight className="h-3.5 w-3.5" />
+                </Link>
+              </div>
             </div>
-            <div className="pt-6">
-              <Link
-                href="/console"
-                className="inline-flex items-center gap-1.5 text-xs font-semibold text-purple-400 hover:text-purple-300 transition"
-              >
-                Enter Tactical Console <ChevronRight className="h-4 w-4" />
-              </Link>
+
+            {/* Student Role Card */}
+            <div className="bg-zinc-950 rounded-2xl border border-emerald-500/30 p-6 flex flex-col justify-between hover:border-emerald-500/50 transition shadow-lg shadow-emerald-950/20">
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <div className="h-10 w-10 rounded-xl bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-center text-emerald-400">
+                    <Ticket className="h-5 w-5" />
+                  </div>
+                  <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 uppercase tracking-wider">
+                    STUDENT
+                  </span>
+                </div>
+                <h3 className="text-lg font-bold text-white">Student Digital Pass</h3>
+                <p className="text-xs text-zinc-400 leading-relaxed">
+                  Personal transit hub: live bus location tracking, digital QR boarding pass, fee receipt verification, route schedules, and attendance history logs.
+                </p>
+                <div className="text-[11px] text-zinc-500 font-mono">
+                  Demo: <span className="text-zinc-300">3BR23CD016 / student123</span>
+                </div>
+              </div>
+              <div className="pt-6">
+                <Link
+                  href="/dashboard/student"
+                  className="w-full py-2.5 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-semibold text-xs transition flex items-center justify-center gap-2"
+                >
+                  <span>Open Student Pass</span>
+                  <ArrowRight className="h-3.5 w-3.5" />
+                </Link>
+              </div>
             </div>
           </div>
         </section>
@@ -414,7 +463,7 @@ export default function SmartTransitHome() {
               <Users className="h-4 w-4" />
             </div>
             <div>
-              <span className="font-semibold text-white block">Pre-configured Role Logins:</span>
+              <span className="font-semibold text-white block">Pre-configured Role Credentials:</span>
               <span className="text-zinc-400">
                 Admin: <code className="text-zinc-200 font-mono">admin / admin123</code> | Driver: <code className="text-zinc-200 font-mono">driver1 / driver123</code> | Student: <code className="text-zinc-200 font-mono">3BR23CD016 / student123</code>
               </span>
@@ -423,7 +472,7 @@ export default function SmartTransitHome() {
 
           <Link
             href="/login"
-            className="px-4 py-2 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-white font-semibold transition flex-shrink-0"
+            className="px-4 py-2 rounded-lg bg-emerald-500 hover:bg-emerald-400 text-black font-bold transition flex-shrink-0"
           >
             Go to Login
           </Link>

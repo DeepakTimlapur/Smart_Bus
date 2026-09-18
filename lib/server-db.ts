@@ -1,8 +1,9 @@
 import crypto from "crypto"
 import bcrypt from "bcryptjs"
-import { withMongo, UserDoc, StudentDoc, DriverDoc, BusDoc, FeeDoc, AttendanceDoc, GpsLocationDoc } from "./mongodb"
+import { withMongo, UserDoc, StudentDoc, DriverDoc, BusDoc, FeeDoc, AttendanceDoc, GpsLocationDoc, FaceReRegistrationRequestDoc } from "./mongodb"
 import { sendStudentCredentialsEmail } from "./email"
 import { reverseGeocode } from "./geocoding"
+import { computeCosineSimilarity } from "./face-recognition"
 
 export interface AuthUser {
   username: string
@@ -107,23 +108,31 @@ export class MongoDatabaseService {
   // Authentication
   async findUserByUsername(username: string): Promise<UserDoc | null> {
     const cleanUser = username.trim()
+    const lowerUser = cleanUser.toLowerCase()
     return await withMongo(
       async (db) => {
         return await db.collection<UserDoc>("users").findOne({
           $or: [
             { username: cleanUser },
-            { username: cleanUser.toLowerCase() },
+            { username: lowerUser },
             { student_id: cleanUser },
+            { student_id: cleanUser.toUpperCase() },
           ],
         })
       },
       (mem) => {
-        return (
-          mem.users.get(cleanUser) ||
-          mem.users.get(cleanUser.toLowerCase()) ||
-          Array.from(mem.users.values()).find((u) => u.student_id === cleanUser) ||
-          null
-        )
+        const direct = mem.users.get(cleanUser) || mem.users.get(lowerUser)
+        if (direct) return direct
+
+        for (const u of mem.users.values()) {
+          if (
+            u.username.toLowerCase() === lowerUser ||
+            (u.student_id && u.student_id.toLowerCase() === lowerUser)
+          ) {
+            return u
+          }
+        }
+        return null
       }
     )
   }
@@ -228,6 +237,8 @@ export class MongoDatabaseService {
       fee_valid_until,
       account_status: "ACTIVE",
       is_boarded: false,
+      face_registered: false,
+      face_reregistration_status: "NONE",
       created_at: now,
       updated_at: now,
     }
@@ -1254,6 +1265,584 @@ export class MongoDatabaseService {
         last_updated: b.last_gps_time,
       })),
       recent_attendance: attendance.slice(0, 20),
+    }
+  }
+
+  // -------------------------------------------------------------------------
+  // Face Recognition & Management Methods
+  // -------------------------------------------------------------------------
+
+  async getFaceStatus(student_id: string): Promise<{
+    student_id: string
+    name: string
+    face_registered: boolean
+    face_registered_at: string | null
+    face_sample_count: number
+    face_reregistration_status: string
+    face_reregistration_requested: boolean
+    fee_status: string
+    assigned_bus: string
+  } | null> {
+    const student = await this.getStudentById(student_id)
+    if (!student) return null
+
+    return {
+      student_id: student.student_id,
+      name: student.name,
+      face_registered: Boolean(student.face_registered),
+      face_registered_at: student.face_registered_at || null,
+      face_sample_count: student.face_sample_count || (student.face_registered ? 5 : 0),
+      face_reregistration_status: student.face_reregistration_status || "NONE",
+      face_reregistration_requested: Boolean(student.face_reregistration_requested),
+      fee_status: student.fee_status,
+      assigned_bus: student.bus_id,
+    }
+  }
+
+  async registerFace(
+    student_id: string,
+    embedding: number[],
+    sample_count = 5
+  ): Promise<{ success: boolean; message: string; error?: string; registered_at?: string }> {
+    const student = await this.getStudentById(student_id)
+    if (!student) {
+      return { success: false, message: "Student not found in registry.", error: "Student not found in registry." }
+    }
+
+    if (!Array.isArray(embedding) || embedding.length !== 128) {
+      return { success: false, message: "Invalid face embedding: 128-dimensional vector required.", error: "Invalid face embedding: 128-dimensional vector required." }
+    }
+
+    // Single active face registration enforcement:
+    // If student already has a registered face and hasn't been approved for re-registration:
+    if (student.face_registered && student.face_reregistration_status !== "APPROVED") {
+      return {
+        success: false,
+        message: "Face already registered. To register a new face, contact the administrator.",
+        error: "Face already registered. To register a new face, contact the administrator.",
+      }
+    }
+
+    const now = new Date().toISOString()
+
+    await withMongo(
+      async (db) => {
+        await db.collection("students").updateOne(
+          { student_id },
+          {
+            $set: {
+              face_registered: true,
+              face_embedding: embedding,
+              face_registered_at: now,
+              face_sample_count: sample_count,
+              face_reregistration_status: "NONE",
+              face_reregistration_requested: false,
+              updated_at: now,
+            },
+          }
+        )
+        // Mark any pending request as completed
+        await db.collection("face_requests").updateOne(
+          { student_id, status: "APPROVED" },
+          { $set: { status: "COMPLETED", reviewed_at: now } }
+        )
+      },
+      (mem) => {
+        const s = mem.students.get(student_id)
+        if (s) {
+          s.face_registered = true
+          s.face_embedding = embedding
+          s.face_registered_at = now
+          s.face_sample_count = sample_count
+          s.face_reregistration_status = "NONE"
+          s.face_reregistration_requested = false
+          s.updated_at = now
+        }
+        for (const req of mem.faceRequests.values()) {
+          if (req.student_id === student_id && req.status === "APPROVED") {
+            req.status = "COMPLETED" as any
+            req.reviewed_at = now
+          }
+        }
+      }
+    )
+
+    return {
+      success: true,
+      message: "Face registration completed successfully.",
+      registered_at: now,
+    }
+  }
+
+  async requestFaceReRegistration(
+    student_id: string,
+    reason?: string
+  ): Promise<{ success: boolean; message: string; status: string; error?: string }> {
+    const student = await this.getStudentById(student_id)
+    if (!student) {
+      return { success: false, message: "Student not found in registry.", error: "Student not found in registry.", status: "NONE" }
+    }
+
+    if (!student.face_registered) {
+      return {
+        success: false,
+        message: "Face is not currently registered. Please complete initial registration first.",
+        error: "Face is not currently registered. Please complete initial registration first.",
+        status: "NONE",
+      }
+    }
+
+    if (student.face_reregistration_status === "PENDING") {
+      return {
+        success: true,
+        message: "Re-registration request already pending administrator review.",
+        status: "PENDING",
+      }
+    }
+
+    const now = new Date().toISOString()
+    const requestId = `REQ-${Date.now()}`
+
+    const requestDoc: FaceReRegistrationRequestDoc = {
+      request_id: requestId,
+      student_id,
+      student_name: student.name,
+      department: student.department,
+      bus_id: student.bus_id,
+      requested_at: now,
+      status: "PENDING",
+      admin_notes: reason || "Student requested face update",
+    }
+
+    await withMongo(
+      async (db) => {
+        await db.collection("face_requests").insertOne(requestDoc)
+        await db.collection("students").updateOne(
+          { student_id },
+          {
+            $set: {
+              face_reregistration_requested: true,
+              face_reregistration_status: "PENDING",
+              face_reregistration_request_date: now,
+              updated_at: now,
+            },
+          }
+        )
+      },
+      (mem) => {
+        mem.faceRequests.set(requestId, requestDoc)
+        const s = mem.students.get(student_id)
+        if (s) {
+          s.face_reregistration_requested = true
+          s.face_reregistration_status = "PENDING"
+          s.face_reregistration_request_date = now
+          s.updated_at = now
+        }
+      }
+    )
+
+    return {
+      success: true,
+      message: "Face re-registration request submitted. Awaiting administrator approval.",
+      status: "PENDING",
+    }
+  }
+
+  async getFaceReRegistrationRequests(): Promise<FaceReRegistrationRequestDoc[]> {
+    return await withMongo(
+      async (db) => {
+        return await db
+          .collection<FaceReRegistrationRequestDoc>("face_requests")
+          .find({})
+          .sort({ requested_at: -1 })
+          .toArray()
+      },
+      (mem) => {
+        return Array.from(mem.faceRequests.values()).sort(
+          (a, b) => new Date(b.requested_at).getTime() - new Date(a.requested_at).getTime()
+        )
+      }
+    )
+  }
+
+  async approveFaceReRegistration(
+    student_id: string,
+    action: "APPROVE" | "REJECT",
+    admin_notes?: string
+  ): Promise<{ success: boolean; message: string; status: string; error?: string }> {
+    const student = await this.getStudentById(student_id)
+    if (!student) {
+      return { success: false, message: "Student not found in registry.", error: "Student not found in registry.", status: "NONE" }
+    }
+
+    const now = new Date().toISOString()
+    const newStatus = action === "APPROVE" ? "APPROVED" : "REJECTED"
+
+    await withMongo(
+      async (db) => {
+        await db.collection("students").updateOne(
+          { student_id },
+          {
+            $set: {
+              face_reregistration_status: newStatus,
+              face_reregistration_requested: false,
+              ...(action === "APPROVE" && { face_registered: false }),
+              updated_at: now,
+            },
+          }
+        )
+        await db.collection("face_requests").updateMany(
+          { student_id, status: "PENDING" },
+          {
+            $set: {
+              status: newStatus,
+              admin_notes: admin_notes || (action === "APPROVE" ? "Approved by administrator" : "Rejected by administrator"),
+              reviewed_at: now,
+            },
+          }
+        )
+      },
+      (mem) => {
+        const s = mem.students.get(student_id)
+        if (s) {
+          s.face_reregistration_status = newStatus
+          s.face_reregistration_requested = false
+          if (action === "APPROVE") s.face_registered = false
+          s.updated_at = now
+        }
+        for (const req of mem.faceRequests.values()) {
+          if (req.student_id === student_id && req.status === "PENDING") {
+            req.status = newStatus
+            req.admin_notes = admin_notes || (action === "APPROVE" ? "Approved by administrator" : "Rejected by administrator")
+            req.reviewed_at = now
+          }
+        }
+      }
+    )
+
+    return {
+      success: true,
+      message:
+        action === "APPROVE"
+          ? "Re-registration request approved. Student may now register a new face profile."
+          : "Re-registration request rejected.",
+      status: newStatus,
+    }
+  }
+
+  async getFaceStats(): Promise<{
+    total_students: number
+    registered_faces: number
+    unregistered_faces: number
+    pending_reregistrations: number
+    registration_rate: string
+  }> {
+    const students = await this.getStudents()
+    const requests = await this.getFaceReRegistrationRequests()
+
+    const total = students.length
+    const registered = students.filter((s) => s.face_registered).length
+    const unregistered = total - registered
+    const pendingReqs = requests.filter((r) => r.status === "PENDING").length
+    const rate = total > 0 ? `${Math.round((registered / total) * 100)}%` : "0%"
+
+    return {
+      total_students: total,
+      registered_faces: registered,
+      unregistered_faces: unregistered,
+      pending_reregistrations: pendingReqs,
+      registration_rate: rate,
+    }
+  }
+
+  // -------------------------------------------------------------------------
+  // Multi-Face Recognition & Attendance Engine (Supports up to 4 simultaneous faces)
+  // -------------------------------------------------------------------------
+  async recognizeAndProcessFaces(params: {
+    bus_id: string
+    stop?: string
+    driver_id?: string
+    faces: Array<{
+      embedding: number[]
+      bbox?: { x: number; y: number; width: number; height: number }
+    }>
+  }): Promise<{
+    success: boolean
+    processed_faces: Array<{
+      face_index: number
+      student_id: string
+      name: string
+      status: "RECOGNIZED" | "UNKNOWN" | "LOW CONFIDENCE" | "ALREADY BOARDED" | "DENIED - FEE NOT VALID"
+      confidence: number
+      fee_status: string
+      assigned_bus: string
+      boarding_status: string
+      message: string
+      bbox?: { x: number; y: number; width: number; height: number }
+    }>
+    count: number
+    overflow: boolean
+    message: string
+    bus: {
+      bus_id: string
+      passengers: number
+      capacity: number
+      available_seats: number
+    }
+  }> {
+    const bus_id = params.bus_id.trim() || "BUS-01"
+    const stop = params.stop || "Campus Terminal"
+    const rawFaces = Array.isArray(params.faces) ? params.faces : []
+    const overflow = rawFaces.length > 4
+    // Process up to 4 faces simultaneously
+    const facesToProcess = rawFaces.slice(0, 4)
+
+    const bus = (await this.getBusById(bus_id)) || (await this.getBuses())[0] || {
+      bus_id,
+      bus_name: bus_id,
+      route: "Route A",
+      driver_name: "Transit Driver",
+      plate_number: bus_id,
+      capacity: 40,
+      passengers: 0,
+    }
+
+    const students = await this.getStudents()
+    const registeredStudents = students.filter(
+      (s) => s.face_registered && Array.isArray(s.face_embedding) && s.face_embedding.length === 128
+    )
+
+    const now = new Date()
+    const timestamp = now.toISOString()
+    const dateStr = timestamp.split("T")[0]
+    const timeStr = now.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", hour12: true })
+
+    const SIMILARITY_THRESHOLD = 0.70
+    const results: Array<{
+      face_index: number
+      student_id: string
+      name: string
+      status: "RECOGNIZED" | "UNKNOWN" | "LOW CONFIDENCE" | "ALREADY BOARDED" | "DENIED - FEE NOT VALID"
+      confidence: number
+      fee_status: string
+      assigned_bus: string
+      boarding_status: string
+      message: string
+      bbox?: { x: number; y: number; width: number; height: number }
+    }> = []
+
+    let currentPassengers = bus.passengers || 0
+
+    for (let i = 0; i < facesToProcess.length; i++) {
+      const face = facesToProcess[i]
+      const embedding = face.embedding
+
+      if (!embedding || embedding.length !== 128) {
+        results.push({
+          face_index: i + 1,
+          student_id: "UNKNOWN",
+          name: "Invalid Face Data",
+          status: "UNKNOWN",
+          confidence: 0,
+          fee_status: "UNKNOWN",
+          assigned_bus: "NONE",
+          boarding_status: "NOT BOARDED",
+          message: "Unable to extract biometric representation",
+          bbox: face.bbox,
+        })
+        continue
+      }
+
+      // Compute similarity across all registered students
+      let bestStudent: StudentDoc | null = null
+      let highestSim = 0
+
+      for (const st of registeredStudents) {
+        const sim = computeCosineSimilarity(embedding, st.face_embedding!)
+        if (sim > highestSim) {
+          highestSim = sim
+          bestStudent = st
+        }
+      }
+
+      const confPercent = Number(highestSim.toFixed(2))
+
+      // 1. Unknown / Unregistered Face
+      if (highestSim < 0.50 || !bestStudent) {
+        results.push({
+          face_index: i + 1,
+          student_id: "UNKNOWN",
+          name: "Unknown / Not Registered",
+          status: "UNKNOWN",
+          confidence: confPercent,
+          fee_status: "UNKNOWN",
+          assigned_bus: "NONE",
+          boarding_status: "NOT BOARDED",
+          message: "Student face is not registered in transit registry.",
+          bbox: face.bbox,
+        })
+        continue
+      }
+
+      // 2. Low Confidence Face
+      if (highestSim < SIMILARITY_THRESHOLD) {
+        results.push({
+          face_index: i + 1,
+          student_id: bestStudent.student_id,
+          name: bestStudent.name,
+          status: "LOW CONFIDENCE",
+          confidence: confPercent,
+          fee_status: bestStudent.fee_status,
+          assigned_bus: bestStudent.bus_id,
+          boarding_status: "NOT BOARDED",
+          message: `Face match (${Math.round(confPercent * 100)}%) is below recognition threshold (70%).`,
+          bbox: face.bbox,
+        })
+        continue
+      }
+
+      // 3. Recognized Student -> Fee Validation Check
+      const fee = await this.getFeeForStudent(bestStudent.student_id)
+      const isFeePending = bestStudent.fee_status === "PENDING" || (fee && fee.fee_status === "PENDING")
+      const validUntilStr = fee?.valid_until || bestStudent.fee_valid_until
+      const isExpired = validUntilStr ? new Date(validUntilStr).getTime() < new Date(dateStr).getTime() : false
+
+      if (isFeePending || isExpired) {
+        const reason = isExpired ? "Pass Expired" : "Transport Fee Payment Pending"
+        const deniedDoc: AttendanceDoc = {
+          student_id: bestStudent.student_id,
+          name: bestStudent.name,
+          bus_id: bus.bus_id,
+          route: bus.route || bestStudent.bus_id,
+          driver: bus.driver_name || "Unassigned",
+          plate_number: bus.plate_number || bus.bus_id,
+          stop,
+          fee_status: bestStudent.fee_status,
+          event_type: "DENIED",
+          status: "DENIED",
+          recognition_result: "DENIED - FEE NOT VALID",
+          confidence: confPercent,
+          date: dateStr,
+          time: timeStr,
+          timestamp,
+        }
+
+        await withMongo(
+          async (db) => {
+            await db.collection("attendance").insertOne(deniedDoc)
+          },
+          (mem) => {
+            mem.attendance.unshift(deniedDoc)
+          }
+        )
+
+        results.push({
+          face_index: i + 1,
+          student_id: bestStudent.student_id,
+          name: bestStudent.name,
+          status: "DENIED - FEE NOT VALID",
+          confidence: confPercent,
+          fee_status: bestStudent.fee_status,
+          assigned_bus: bestStudent.bus_id,
+          boarding_status: "DENIED",
+          message: `Denied: ${reason}. Please clear dues with transit office.`,
+          bbox: face.bbox,
+        })
+        continue
+      }
+
+      // 4. Duplicate Boarding Protection:
+      // If student is already boarded, do not create duplicate boarding event or increment passenger count
+      if (bestStudent.is_boarded) {
+        results.push({
+          face_index: i + 1,
+          student_id: bestStudent.student_id,
+          name: bestStudent.name,
+          status: "ALREADY BOARDED",
+          confidence: confPercent,
+          fee_status: bestStudent.fee_status,
+          assigned_bus: bestStudent.bus_id,
+          boarding_status: "Already Boarded",
+          message: "Student has already boarded this bus.",
+          bbox: face.bbox,
+        })
+        continue
+      }
+
+      // 5. Valid New Boarding Event -> Record Attendance & Increment Passenger Count
+      const boardedDoc: AttendanceDoc = {
+        student_id: bestStudent.student_id,
+        name: bestStudent.name,
+        bus_id: bus.bus_id,
+        route: bus.route || bestStudent.bus_id,
+        driver: bus.driver_name || "Unassigned",
+        plate_number: bus.plate_number || bus.bus_id,
+        stop,
+        fee_status: bestStudent.fee_status,
+        event_type: "BOARDED",
+        status: "BOARDED",
+        recognition_result: "RECOGNIZED",
+        confidence: confPercent,
+        date: dateStr,
+        time: timeStr,
+        timestamp,
+      }
+
+      currentPassengers = Math.min(bus.capacity, currentPassengers + 1)
+
+      // Persist boarding
+      await withMongo(
+        async (db) => {
+          await db.collection("attendance").insertOne(boardedDoc)
+          await db.collection("students").updateOne(
+            { student_id: bestStudent!.student_id },
+            { $set: { is_boarded: true, updated_at: timestamp } }
+          )
+          await db.collection("buses").updateOne(
+            { bus_id: bus.bus_id },
+            { $set: { passengers: currentPassengers, updated_at: timestamp } }
+          )
+        },
+        (mem) => {
+          mem.attendance.unshift(boardedDoc)
+          const st = mem.students.get(bestStudent!.student_id)
+          if (st) st.is_boarded = true
+          const b = mem.buses.get(bus.bus_id)
+          if (b) b.passengers = currentPassengers
+        }
+      )
+
+      // Mark locally in current loop
+      bestStudent.is_boarded = true
+
+      results.push({
+        face_index: i + 1,
+        student_id: bestStudent.student_id,
+        name: bestStudent.name,
+        status: "RECOGNIZED",
+        confidence: confPercent,
+        fee_status: bestStudent.fee_status,
+        assigned_bus: bestStudent.bus_id,
+        boarding_status: "BOARDED",
+        message: `Verified entry: Boarded successfully at ${stop}`,
+        bbox: face.bbox,
+      })
+    }
+
+    return {
+      success: true,
+      processed_faces: results,
+      count: results.length,
+      overflow,
+      message: overflow
+        ? "Maximum 4 faces can be processed simultaneously."
+        : `Processed ${results.length} detected face(s).`,
+      bus: {
+        bus_id: bus.bus_id,
+        passengers: currentPassengers,
+        capacity: bus.capacity,
+        available_seats: Math.max(0, bus.capacity - currentPassengers),
+      },
     }
   }
 }

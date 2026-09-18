@@ -1,6 +1,101 @@
 const API_URL = ""
 
 // =========================================================
+// TOKEN & SESSION MANAGEMENT
+// =========================================================
+
+export function getStoredToken(): string | null {
+  if (typeof window === "undefined") return null
+  return (
+    localStorage.getItem("smart_bus_access_token") ||
+    localStorage.getItem("token") ||
+    localStorage.getItem("access_token") ||
+    null
+  )
+}
+
+export function getStoredUser(): CurrentUser | null {
+  if (typeof window === "undefined") return null
+  try {
+    const raw = localStorage.getItem("smart_bus_user")
+    if (raw) {
+      const parsed = JSON.parse(raw)
+      if (parsed && parsed.username && parsed.role) {
+        return {
+          username: parsed.username,
+          role: parsed.role,
+          name: parsed.name || parsed.username,
+          full_name: parsed.full_name || parsed.name || parsed.username,
+          assigned_bus: parsed.assigned_bus || null,
+          student_id: parsed.student_id || null,
+        }
+      }
+    }
+  } catch {
+    // Ignore JSON error
+  }
+  const username = localStorage.getItem("username")
+  const role = (localStorage.getItem("role") || localStorage.getItem("user_role")) as any
+  if (username && role) {
+    return {
+      username,
+      role,
+      name: localStorage.getItem("name") || username,
+      full_name: localStorage.getItem("name") || username,
+    }
+  }
+  return null
+}
+
+export function setAuthSession(data: {
+  access_token: string
+  role: string
+  username: string
+  name?: string | null
+  assigned_bus?: string | null
+  student_id?: string | null
+}) {
+  if (typeof window === "undefined") return
+  localStorage.setItem("smart_bus_access_token", data.access_token)
+  localStorage.setItem("token", data.access_token)
+  localStorage.setItem("access_token", data.access_token)
+  localStorage.setItem("role", data.role)
+  localStorage.setItem("user_role", data.role)
+  localStorage.setItem("username", data.username)
+  localStorage.setItem(
+    "smart_bus_user",
+    JSON.stringify({
+      username: data.username,
+      role: data.role,
+      name: data.name || data.username,
+      assigned_bus: data.assigned_bus,
+      student_id: data.student_id,
+    })
+  )
+  try {
+    document.cookie = `smart_bus_role=${encodeURIComponent(data.role)}; path=/; max-age=604800; SameSite=Lax`
+  } catch {
+    // Ignore cookie write errors if in restricted environment
+  }
+}
+
+export function clearAuthSession() {
+  if (typeof window === "undefined") return
+  localStorage.removeItem("smart_bus_access_token")
+  localStorage.removeItem("smart_bus_user")
+  localStorage.removeItem("token")
+  localStorage.removeItem("access_token")
+  localStorage.removeItem("username")
+  localStorage.removeItem("role")
+  localStorage.removeItem("user_role")
+  try {
+    document.cookie = "smart_bus_role=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT"
+  } catch {
+    // Ignore cookie write errors
+  }
+}
+
+// =========================================================
 // GENERIC API REQUEST
 // =========================================================
 
@@ -8,10 +103,7 @@ export async function apiRequest<T>(
   endpoint: string,
   options: RequestInit = {}
 ): Promise<T> {
-  const token =
-    typeof window !== "undefined"
-      ? localStorage.getItem("smart_bus_access_token")
-      : null
+  const token = getStoredToken()
 
   const headers = new Headers(options.headers)
 
@@ -27,40 +119,31 @@ export async function apiRequest<T>(
     headers.set("Authorization", `Bearer ${token}`)
   }
 
-  const response = await fetch(
-    `${API_URL}${endpoint}`,
-    {
+  let response: Response
+  try {
+    response = await fetch(`${API_URL}${endpoint}`, {
       ...options,
       headers,
-    }
-  )
+    })
+  } catch {
+    throw new Error("Unable to connect to the server. Please try again.")
+  }
 
   // -------------------------------------------------------
-  // AUTHENTICATION EXPIRED
+  // AUTHENTICATION EXPIRED / INVALID (401)
   // -------------------------------------------------------
 
   if (response.status === 401) {
-    if (typeof window !== "undefined") {
-      localStorage.removeItem(
-        "smart_bus_access_token"
-      )
+    clearAuthSession()
+    throw new Error("Your session has expired. Please log in again.")
+  }
 
-      localStorage.removeItem(
-        "smart_bus_user"
-      )
+  // -------------------------------------------------------
+  // UNAUTHORIZED ROLE ACCESS (403)
+  // -------------------------------------------------------
 
-      localStorage.removeItem(
-        "username"
-      )
-
-      localStorage.removeItem(
-        "role"
-      )
-    }
-
-    throw new Error(
-      "Authentication expired. Please login again."
-    )
+  if (response.status === 403) {
+    throw new Error("You are not authorized to access this section.")
   }
 
   // -------------------------------------------------------
@@ -68,25 +151,15 @@ export async function apiRequest<T>(
   // -------------------------------------------------------
 
   if (!response.ok) {
-    let message =
-      `Request failed with status ${response.status}`
+    let message = `Request failed with status ${response.status}`
 
     try {
-      const errorData =
-        await response.json()
+      const errorData = await response.json()
 
-      if (
-        typeof errorData.detail ===
-        "string"
-      ) {
-        message =
-          errorData.detail
-      } else if (
-        typeof errorData.message ===
-        "string"
-      ) {
-        message =
-          errorData.message
+      if (typeof errorData.detail === "string") {
+        message = errorData.detail
+      } else if (typeof errorData.message === "string") {
+        message = errorData.message
       }
     } catch {
       // Ignore JSON parsing errors.
@@ -98,7 +171,6 @@ export async function apiRequest<T>(
   return response.json()
 }
 
-
 // =========================================================
 // AUTHENTICATION
 // =========================================================
@@ -108,6 +180,9 @@ export interface LoginResponse {
   token_type: string
   role: string
   username: string
+  name?: string | null
+  assigned_bus?: string | null
+  student_id?: string | null
 }
 
 export interface CurrentUser {
@@ -123,7 +198,6 @@ export interface CurrentUser {
   assigned_bus?: string | null
 }
 
-
 // =========================================================
 // LOGIN
 // =========================================================
@@ -132,48 +206,31 @@ export async function login(
   username: string,
   password: string
 ): Promise<LoginResponse> {
-  const body =
-    new URLSearchParams()
+  const body = new URLSearchParams()
+  body.append("username", username.trim())
+  body.append("password", password)
 
-  body.append(
-    "username",
-    username
-  )
-
-  body.append(
-    "password",
-    password
-  )
-
-  const response =
-    await fetch(
-      `${API_URL}/api/v1/auth/login`,
-      {
-        method: "POST",
-
-        headers: {
-          "Content-Type":
-            "application/x-www-form-urlencoded",
-        },
-
-        body,
-      }
-    )
+  let response: Response
+  try {
+    response = await fetch(`${API_URL}/api/v1/auth/login`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded",
+        Accept: "application/json",
+      },
+      body: body.toString(),
+    })
+  } catch {
+    throw new Error("Unable to connect to the server. Please try again.")
+  }
 
   if (!response.ok) {
-    let message =
-      "Incorrect username or password."
+    let message = "Invalid username or password"
 
     try {
-      const data =
-        await response.json()
-
-      if (
-        typeof data.detail ===
-        "string"
-      ) {
-        message =
-          data.detail
+      const data = await response.json()
+      if (typeof data.detail === "string") {
+        message = data.detail
       }
     } catch {
       // Ignore parsing errors.
@@ -182,7 +239,9 @@ export async function login(
     throw new Error(message)
   }
 
-  return response.json()
+  const data: LoginResponse = await response.json()
+  setAuthSession(data)
+  return data
 }
 
 
@@ -837,6 +896,10 @@ export interface ManagedStudent {
   fee_pending?: number
   fee_valid_until?: string | null
   is_boarded: boolean
+  face_registered?: boolean
+  face_registered_at?: string | null
+  face_reregistration_status?: "NONE" | "PENDING" | "APPROVED" | "REJECTED"
+  face_samples_count?: number
 }
 
 
@@ -1057,4 +1120,135 @@ export async function updateManagedFee(
       ),
     }
   )
+}
+
+// =========================================================
+// FACE RECOGNITION & BIOMETRICS API
+// =========================================================
+
+export interface FaceStatusResponse {
+  student_id: string
+  name: string
+  face_registered: boolean
+  face_registered_at: string | null
+  face_sample_count: number
+  face_reregistration_status: "NONE" | "PENDING" | "APPROVED" | "REJECTED"
+  face_reregistration_requested: boolean
+  fee_status: string
+  assigned_bus: string
+}
+
+export interface FaceRecognitionItem {
+  face_index: number
+  student_id: string
+  name: string
+  status: "RECOGNIZED" | "UNKNOWN" | "LOW CONFIDENCE" | "ALREADY BOARDED" | "DENIED - FEE NOT VALID"
+  confidence: number
+  fee_status: string
+  assigned_bus: string
+  boarding_status: string
+  message: string
+  bbox?: { x: number; y: number; width: number; height: number }
+}
+
+export interface MultiFaceRecognitionResponse {
+  success: boolean
+  processed_faces: FaceRecognitionItem[]
+  count: number
+  overflow: boolean
+  message: string
+  bus: {
+    bus_id: string
+    passengers: number
+    capacity: number
+    available_seats: number
+  }
+}
+
+export interface FaceReRegistrationRequestItem {
+  request_id: string
+  student_id: string
+  student_name: string
+  department: string
+  bus_id: string
+  requested_at: string
+  status: "PENDING" | "APPROVED" | "REJECTED"
+  admin_notes?: string
+  reviewed_at?: string
+}
+
+export interface FaceStatsResponse {
+  total_students: number
+  registered_faces: number
+  unregistered_faces: number
+  pending_reregistrations: number
+  registration_rate: string
+}
+
+export async function getFaceStatus(studentId?: string): Promise<FaceStatusResponse> {
+  const query = studentId ? `?student_id=${encodeURIComponent(studentId)}` : ""
+  return apiRequest<FaceStatusResponse>(`/api/v1/smart-bus/face/status${query}`)
+}
+
+export async function registerStudentFace(
+  embedding: number[],
+  sampleCount = 5
+): Promise<{ success: boolean; message: string; registered_at?: string }> {
+  return apiRequest<{ success: boolean; message: string; registered_at?: string }>(
+    "/api/v1/smart-bus/face/register",
+    {
+      method: "POST",
+      body: JSON.stringify({ face_embedding: embedding, sample_count: sampleCount }),
+    }
+  )
+}
+
+export async function requestFaceReRegistration(
+  reason?: string
+): Promise<{ success: boolean; message: string; status: string }> {
+  return apiRequest<{ success: boolean; message: string; status: string }>(
+    "/api/v1/smart-bus/face/reregistration-request",
+    {
+      method: "POST",
+      body: JSON.stringify({ reason }),
+    }
+  )
+}
+
+export async function getFaceReRegistrationRequests(): Promise<{
+  requests: FaceReRegistrationRequestItem[]
+  count: number
+}> {
+  return apiRequest<{ requests: FaceReRegistrationRequestItem[]; count: number }>(
+    "/api/v1/smart-bus/face/reregistration-requests"
+  )
+}
+
+export async function approveFaceReRegistration(
+  studentId: string,
+  action: "APPROVE" | "REJECT",
+  adminNotes?: string
+): Promise<{ success: boolean; message: string; status: string }> {
+  return apiRequest<{ success: boolean; message: string; status: string }>(
+    "/api/v1/smart-bus/face/reregistration-approve",
+    {
+      method: "POST",
+      body: JSON.stringify({ student_id: studentId, action, admin_notes: adminNotes }),
+    }
+  )
+}
+
+export async function getFaceStats(): Promise<FaceStatsResponse> {
+  return apiRequest<FaceStatsResponse>("/api/v1/smart-bus/face/stats")
+}
+
+export async function recognizeFacesBatch(
+  busId: string,
+  stop: string,
+  faces: Array<{ embedding: number[]; bbox?: any }>
+): Promise<MultiFaceRecognitionResponse> {
+  return apiRequest<MultiFaceRecognitionResponse>("/api/v1/smart-bus/face/recognize", {
+    method: "POST",
+    body: JSON.stringify({ bus_id: busId, stop, faces }),
+  })
 }

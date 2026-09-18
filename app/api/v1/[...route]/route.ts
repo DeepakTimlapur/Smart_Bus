@@ -4,16 +4,19 @@ import { serverDb, createJwtToken, verifyJwtToken, AuthUser } from "@/lib/server
 // Helper to extract JSON or form body safely
 async function getRequestBody(req: NextRequest): Promise<Record<string, any>> {
   const contentType = req.headers.get("content-type") || ""
-  if (contentType.includes("application/json")) {
+  if (contentType.includes("application/x-www-form-urlencoded")) {
     try {
-      return await req.json()
+      const text = await req.text()
+      const params = new URLSearchParams(text)
+      const result: Record<string, any> = {}
+      params.forEach((value, key) => {
+        result[key] = value
+      })
+      return result
     } catch {
       return {}
     }
-  } else if (
-    contentType.includes("application/x-www-form-urlencoded") ||
-    contentType.includes("multipart/form-data")
-  ) {
+  } else if (contentType.includes("multipart/form-data")) {
     try {
       const formData = await req.formData()
       const result: Record<string, any> = {}
@@ -82,7 +85,7 @@ export async function GET(
     const user = await getAuthUser(authHeader)
     if (!user) {
       return NextResponse.json(
-        { detail: "Not authenticated. Bearer token missing or invalid." },
+        { detail: "Your session has expired. Please log in again." },
         { status: 401 }
       )
     }
@@ -257,8 +260,11 @@ export async function GET(
   // 9. Students Management (Admin / Driver read)
   if (pathStr === "smart-bus/management/students" || pathStr === "students") {
     const user = await getAuthUser(authHeader)
-    if (user && user.role === "STUDENT") {
-      return NextResponse.json({ detail: "Access denied. Admin or Driver privileges required." }, { status: 403 })
+    if (!user) {
+      return NextResponse.json({ detail: "Your session has expired. Please log in again." }, { status: 401 })
+    }
+    if (user.role === "STUDENT") {
+      return NextResponse.json({ detail: "You are not authorized to access this section." }, { status: 403 })
     }
     const students = await serverDb.getStudents()
     const formatted = students.map((s) => ({
@@ -285,8 +291,11 @@ export async function GET(
   // 10. Drivers Management
   if (pathStr === "smart-bus/management/drivers" || pathStr === "drivers") {
     const user = await getAuthUser(authHeader)
-    if (user && user.role === "STUDENT") {
-      return NextResponse.json({ detail: "Access denied. Admin or Driver privileges required." }, { status: 403 })
+    if (!user) {
+      return NextResponse.json({ detail: "Your session has expired. Please log in again." }, { status: 401 })
+    }
+    if (user.role === "STUDENT") {
+      return NextResponse.json({ detail: "You are not authorized to access this section." }, { status: 403 })
     }
     const drivers = await serverDb.getDrivers()
     const formatted = drivers.map((d) => ({
@@ -306,8 +315,11 @@ export async function GET(
   // 11. Fees Management
   if (pathStr === "smart-bus/management/fees" || pathStr === "fees") {
     const user = await getAuthUser(authHeader)
-    if (user && user.role !== "ADMIN") {
-      return NextResponse.json({ detail: "Access denied. Admin privileges required." }, { status: 403 })
+    if (!user) {
+      return NextResponse.json({ detail: "Your session has expired. Please log in again." }, { status: 401 })
+    }
+    if (user.role !== "ADMIN") {
+      return NextResponse.json({ detail: "You are not authorized to access this section." }, { status: 403 })
     }
     const fees = await serverDb.getFees()
     const students = await serverDb.getStudents()
@@ -369,6 +381,53 @@ export async function GET(
     const students = await serverDb.getStudents()
     const boardedStudents = students.filter((s) => s.bus_id === busId && s.is_boarded)
     return NextResponse.json({ bus_id: busId, passengers: boardedStudents, count: boardedStudents.length })
+  }
+
+  // 15. Face Recognition: Student Face Status
+  if (pathStr === "smart-bus/face/status") {
+    const user = await getAuthUser(authHeader)
+    if (!user) {
+      return NextResponse.json({ detail: "Your session has expired. Please log in again." }, { status: 401 })
+    }
+
+    const targetStudentId =
+      user.role === "STUDENT"
+        ? (user.student_id || user.username)
+        : (req.nextUrl.searchParams.get("student_id") || user.student_id || user.username)
+
+    const status = await serverDb.getFaceStatus(targetStudentId)
+    if (!status) {
+      return NextResponse.json({ detail: "Student face record not found" }, { status: 404 })
+    }
+    return NextResponse.json(status)
+  }
+
+  // 16. Face Recognition: Admin Re-registration Requests List
+  if (pathStr === "smart-bus/face/reregistration-requests") {
+    const user = await getAuthUser(authHeader)
+    if (!user) {
+      return NextResponse.json({ detail: "Your session has expired. Please log in again." }, { status: 401 })
+    }
+    if (user.role !== "ADMIN") {
+      return NextResponse.json({ detail: "You are not authorized to access this section." }, { status: 403 })
+    }
+
+    const requests = await serverDb.getFaceReRegistrationRequests()
+    return NextResponse.json({ requests, count: requests.length })
+  }
+
+  // 17. Face Recognition: Admin Face Stats
+  if (pathStr === "smart-bus/face/stats") {
+    const user = await getAuthUser(authHeader)
+    if (!user) {
+      return NextResponse.json({ detail: "Your session has expired. Please log in again." }, { status: 401 })
+    }
+    if (user.role !== "ADMIN") {
+      return NextResponse.json({ detail: "You are not authorized to access this section." }, { status: 403 })
+    }
+
+    const stats = await serverDb.getFaceStats()
+    return NextResponse.json(stats)
   }
 
   return NextResponse.json({ detail: `Endpoint GET /api/v1/${pathStr} not found` }, { status: 404 })
@@ -468,6 +527,11 @@ export async function POST(
 
   // 4. Live GPS Telemetry Update (from driver or Raspberry Pi + GPS hardware)
   if (pathStr === "smart-bus/gps" || pathStr === "buses/location" || (routeParts[0] === "buses" && routeParts[2] === "location")) {
+    const user = await getAuthUser(authHeader)
+    if (user && user.role === "STUDENT") {
+      return NextResponse.json({ detail: "You are not authorized to access this section." }, { status: 403 })
+    }
+
     const bus_id = (body.bus_id || body.busId || (routeParts[0] === "buses" ? routeParts[1] : "BUS-01")).trim()
     const latitude = Number(body.latitude)
     const longitude = Number(body.longitude)
@@ -494,8 +558,11 @@ export async function POST(
   // 5. Admin: Create Student + MongoDB Record + Immediate SMTP Email
   if (pathStr === "smart-bus/management/students" || pathStr === "students") {
     const user = await getAuthUser(authHeader)
-    if (user && user.role !== "ADMIN") {
-      return NextResponse.json({ detail: "Access denied. Admin privileges required." }, { status: 403 })
+    if (!user) {
+      return NextResponse.json({ detail: "Your session has expired. Please log in again." }, { status: 401 })
+    }
+    if (user.role !== "ADMIN") {
+      return NextResponse.json({ detail: "You are not authorized to access this section." }, { status: 403 })
     }
 
     const student_id = (body.student_id || body.studentId || "").trim()
@@ -570,8 +637,11 @@ export async function POST(
   // 6. Admin: Create Driver
   if (pathStr === "smart-bus/management/drivers" || pathStr === "drivers") {
     const user = await getAuthUser(authHeader)
-    if (user && user.role !== "ADMIN") {
-      return NextResponse.json({ detail: "Access denied. Admin privileges required." }, { status: 403 })
+    if (!user) {
+      return NextResponse.json({ detail: "Your session has expired. Please log in again." }, { status: 401 })
+    }
+    if (user.role !== "ADMIN") {
+      return NextResponse.json({ detail: "You are not authorized to access this section." }, { status: 403 })
     }
 
     const username = (body.username || "").trim()
@@ -599,8 +669,11 @@ export async function POST(
   // 7. Admin: Create Bus
   if (pathStr === "smart-bus/management/buses" || pathStr === "buses") {
     const user = await getAuthUser(authHeader)
-    if (user && user.role !== "ADMIN") {
-      return NextResponse.json({ detail: "Access denied. Admin privileges required." }, { status: 403 })
+    if (!user) {
+      return NextResponse.json({ detail: "Your session has expired. Please log in again." }, { status: 401 })
+    }
+    if (user.role !== "ADMIN") {
+      return NextResponse.json({ detail: "You are not authorized to access this section." }, { status: 403 })
     }
 
     const bus_id = (body.bus_id || body.busId || "").trim()
@@ -632,8 +705,11 @@ export async function POST(
   // 8. Admin: Create or Update Fee
   if (pathStr === "smart-bus/management/fees" || pathStr === "fees") {
     const user = await getAuthUser(authHeader)
-    if (user && user.role !== "ADMIN") {
-      return NextResponse.json({ detail: "Access denied. Admin privileges required." }, { status: 403 })
+    if (!user) {
+      return NextResponse.json({ detail: "Your session has expired. Please log in again." }, { status: 401 })
+    }
+    if (user.role !== "ADMIN") {
+      return NextResponse.json({ detail: "You are not authorized to access this section." }, { status: 403 })
     }
     const student_id = (body.student_id || body.studentId || "").trim()
     if (!student_id) {
@@ -668,6 +744,108 @@ export async function POST(
     )
   }
 
+  // 9. Face Recognition: Student Face Registration
+  if (pathStr === "smart-bus/face/register") {
+    const user = await getAuthUser(authHeader)
+    if (!user) {
+      return NextResponse.json({ detail: "Your session has expired. Please log in again." }, { status: 401 })
+    }
+    if (user.role === "DRIVER") {
+      return NextResponse.json({ detail: "You are not authorized to access this section." }, { status: 403 })
+    }
+
+    const targetStudentId =
+      user.role === "STUDENT"
+        ? (user.student_id || user.username)
+        : (body.student_id || user.student_id || user.username)
+
+    if (!body.face_embedding || !Array.isArray(body.face_embedding) || body.face_embedding.length !== 128) {
+      return NextResponse.json(
+        { detail: "Valid 128-dimensional face embedding is required." },
+        { status: 400 }
+      )
+    }
+
+    const sampleCount = Number(body.sample_count || 5)
+    const result = await serverDb.registerFace(targetStudentId, body.face_embedding, sampleCount)
+
+    if (!result.success) {
+      return NextResponse.json({ detail: result.error || "Failed to register face." }, { status: 400 })
+    }
+
+    return NextResponse.json(result, { status: 200 })
+  }
+
+  // 10. Face Recognition: Student Re-registration Request
+  if (pathStr === "smart-bus/face/reregistration-request") {
+    const user = await getAuthUser(authHeader)
+    if (!user) {
+      return NextResponse.json({ detail: "Your session has expired. Please log in again." }, { status: 401 })
+    }
+    if (user.role === "DRIVER") {
+      return NextResponse.json({ detail: "You are not authorized to access this section." }, { status: 403 })
+    }
+
+    const targetStudentId = user.student_id || user.username
+    const reason = body.reason || "Student requested face update"
+    const result = await serverDb.requestFaceReRegistration(targetStudentId, reason)
+
+    if (!result.success) {
+      return NextResponse.json({ detail: result.error || "Failed to submit request." }, { status: 400 })
+    }
+
+    return NextResponse.json(result, { status: 200 })
+  }
+
+  // 11. Face Recognition: Admin Re-registration Approval
+  if (pathStr === "smart-bus/face/reregistration-approve") {
+    const user = await getAuthUser(authHeader)
+    if (!user) {
+      return NextResponse.json({ detail: "Your session has expired. Please log in again." }, { status: 401 })
+    }
+    if (user.role !== "ADMIN") {
+      return NextResponse.json({ detail: "You are not authorized to access this section." }, { status: 403 })
+    }
+
+    const student_id = (body.student_id || "").trim()
+    if (!student_id) {
+      return NextResponse.json({ detail: "student_id is required." }, { status: 400 })
+    }
+
+    const action = body.action === "REJECT" ? "REJECT" : "APPROVE"
+    const result = await serverDb.approveFaceReRegistration(student_id, action, body.admin_notes)
+
+    if (!result.success) {
+      return NextResponse.json({ detail: result.error || "Failed to process request." }, { status: 400 })
+    }
+
+    return NextResponse.json(result, { status: 200 })
+  }
+
+  // 12. Face Recognition: Driver Multi-Face Processing (Up to 4 faces simultaneously)
+  if (pathStr === "smart-bus/face/recognize") {
+    const user = await getAuthUser(authHeader)
+    if (!user) {
+      return NextResponse.json({ detail: "Your session has expired. Please log in again." }, { status: 401 })
+    }
+    if (user.role === "STUDENT") {
+      return NextResponse.json({ detail: "You are not authorized to access this section." }, { status: 403 })
+    }
+
+    const bus_id = (body.bus_id || user.assigned_bus || "BUS-01").trim()
+    const stop = (body.stop || "Campus Terminal").trim()
+    const faces = Array.isArray(body.faces) ? body.faces : []
+
+    const result = await serverDb.recognizeAndProcessFaces({
+      bus_id,
+      stop,
+      driver_id: user.username,
+      faces,
+    })
+
+    return NextResponse.json(result, { status: 200 })
+  }
+
   return NextResponse.json({ detail: `Endpoint POST /api/v1/${pathStr} not found` }, { status: 404 })
 }
 
@@ -686,8 +864,11 @@ export async function PUT(
 
   // Enforce Admin authorization on PUT operations
   const user = await getAuthUser(authHeader)
-  if (user && user.role !== "ADMIN") {
-    return NextResponse.json({ detail: "Access denied. Admin privileges required." }, { status: 403 })
+  if (!user) {
+    return NextResponse.json({ detail: "Your session has expired. Please log in again." }, { status: 401 })
+  }
+  if (user.role !== "ADMIN") {
+    return NextResponse.json({ detail: "You are not authorized to access this section." }, { status: 403 })
   }
 
   // 1. Update Student
@@ -776,8 +957,11 @@ export async function DELETE(
 
   // Enforce Admin authorization on DELETE operations
   const user = await getAuthUser(authHeader)
-  if (user && user.role !== "ADMIN") {
-    return NextResponse.json({ detail: "Access denied. Admin privileges required." }, { status: 403 })
+  if (!user) {
+    return NextResponse.json({ detail: "Your session has expired. Please log in again." }, { status: 401 })
+  }
+  if (user.role !== "ADMIN") {
+    return NextResponse.json({ detail: "You are not authorized to access this section." }, { status: 403 })
   }
 
   // 1. Delete Student

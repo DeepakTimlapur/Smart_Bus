@@ -17,6 +17,7 @@ import {
   Sparkles,
 } from "lucide-react"
 import { getMyBusLocation, getMyFee, getAttendance, type GPSLocation, type Attendance } from "@/lib/api"
+import FaceRegistration from "./FaceRegistration"
 
 interface StudentDashboardProps {
   user: {
@@ -125,6 +126,15 @@ export default function StudentDashboard({ user }: StudentDashboardProps) {
           </div>
         </div>
       </div>
+
+      {/* Biometric Face Registration Module */}
+      <FaceRegistration
+        studentId={studentId}
+        studentName={user.name || undefined}
+        department={user.department || undefined}
+        assignedBus={assignedBus}
+        onStatusChanged={loadData}
+      />
 
       {/* Grid: 1. Live Bus Tracker, 2. Digital Transport Pass & Fees */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">

@@ -21,6 +21,8 @@ import {
   X,
 } from "lucide-react"
 
+import { getCurrentUser, clearAuthSession, getStoredToken } from "@/lib/api"
+
 const API_URL = ""
 
 const nav = [
@@ -54,50 +56,36 @@ export default function Console() {
   const [checkingAuth, setCheckingAuth] = useState(true)
 
   useEffect(() => {
-    const token = typeof window !== "undefined" ? localStorage.getItem("smart_bus_access_token") : null
+    const token = getStoredToken()
 
     if (!token) {
-      window.location.href = "/login"
+      clearAuthSession()
+      window.location.href = "/login?message=session_expired"
       return
     }
 
-    fetch(`${API_URL}/api/v1/auth/me`, {
-      method: "GET",
-      headers: {
-        Accept: "application/json",
-        Authorization: `Bearer ${token}`,
-      },
-    })
-      .then(async (response) => {
-        if (!response.ok) {
-          throw new Error("Authentication failed")
+    getCurrentUser()
+      .then((data) => {
+        if (data.role !== "ADMIN") {
+          window.location.href = `/dashboard/${data.role.toLowerCase()}`
+          return
         }
 
-        return response.json()
-      })
-      .then((data) => {
         setUser({
           username: data.username,
           role: data.role,
         })
-
         setCheckingAuth(false)
       })
       .catch(() => {
-        if (typeof window !== "undefined") {
-          localStorage.removeItem("smart_bus_access_token")
-          localStorage.removeItem("smart_bus_user")
-          window.location.href = "/login"
-        }
+        clearAuthSession()
+        window.location.href = "/login?message=session_expired"
       })
   }, [])
 
   function handleLogout() {
-    if (typeof window !== "undefined") {
-      localStorage.removeItem("smart_bus_access_token")
-      localStorage.removeItem("smart_bus_user")
-      window.location.href = "/login"
-    }
+    clearAuthSession()
+    window.location.href = "/login"
   }
 
   if (checkingAuth) {

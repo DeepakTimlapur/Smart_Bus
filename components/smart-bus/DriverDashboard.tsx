@@ -27,6 +27,7 @@ import {
   type ManagedStudent,
 } from "@/lib/api"
 import DriverGPS from "./DriverGPS"
+import DriverFaceRecognition from "./DriverFaceRecognition"
 
 interface DriverDashboardProps {
   user: {
@@ -163,6 +164,15 @@ export default function DriverDashboard({ user }: DriverDashboardProps) {
           Refresh Fleet State
         </button>
       </div>
+
+      {/* Multi-Face Recognition Entrance Module (Up to 4 Simultaneous Faces) */}
+      <DriverFaceRecognition
+        busId={assignedBusId}
+        currentStop={stopInput}
+        currentPassengers={currentPassengers}
+        capacity={capacity}
+        onAttendanceUpdated={loadBusData}
+      />
 
       {/* Grid: 1. Bus Occupancy Status, 2. Non-QR Entry Terminal */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">

@@ -5,15 +5,14 @@ import { useRouter } from "next/navigation"
 import Link from "next/link"
 import {
   Bus as BusIcon,
-  Shield,
   User,
   LogOut,
   Sun,
   Moon,
   Loader2,
-  AlertCircle,
+  ShieldAlert,
   LogIn,
-  RefreshCw,
+  ArrowRight,
 } from "lucide-react"
 import {
   getCurrentUser,
@@ -39,14 +38,12 @@ import {
   type ManagedFee,
 } from "@/lib/api"
 import AdminDashboard from "@/components/smart-bus/AdminDashboard"
-import DriverDashboard from "@/components/smart-bus/DriverDashboard"
-import StudentDashboard from "@/components/smart-bus/StudentDashboard"
 
-export default function DashboardPage() {
+export default function AdminDashboardPage() {
   const router = useRouter()
   const [currentUser, setCurrentUser] = useState<CurrentUser | null>(null)
   const [loading, setLoading] = useState(true)
-  const [authError, setAuthError] = useState<string | null>(null)
+  const [unauthorizedRole, setUnauthorizedRole] = useState<string | null>(null)
   const [darkMode, setDarkMode] = useState(true)
 
   // Admin Data Store
@@ -94,64 +91,89 @@ export default function DashboardPage() {
     }
   }
 
-  const checkAuthAndLoad = async () => {
-    setAuthError(null)
-
-    // 1. Check localStorage first
-    const token = getStoredToken()
-    const storedUser = getStoredUser()
-
-    if (!token) {
-      router.replace("/login")
-      return
-    }
-
-    if (storedUser && storedUser.role) {
-      if (storedUser.role === "ADMIN") {
-        router.replace("/dashboard/admin")
-        return
-      } else if (storedUser.role === "DRIVER") {
-        router.replace("/dashboard/driver")
-        return
-      } else if (storedUser.role === "STUDENT") {
-        router.replace("/dashboard/student")
-        return
-      }
-    }
-
-    // 2. Validate with server if no cached role
-    try {
-      const timeoutPromise = new Promise<never>((_, reject) =>
-        setTimeout(() => reject(new Error("Auth request timeout")), 4000)
-      )
-      const user = await Promise.race([getCurrentUser(), timeoutPromise])
-
-      if (!user || !user.role) {
-        throw new Error("No active session detected.")
-      }
-      setCurrentUser(user)
-
-      if (user.role === "ADMIN") {
-        router.replace("/dashboard/admin")
-        return
-      } else if (user.role === "DRIVER") {
-        router.replace("/dashboard/driver")
-        return
-      } else if (user.role === "STUDENT") {
-        router.replace("/dashboard/student")
-        return
-      }
-    } catch (err: any) {
-      console.warn("Session check failed:", err)
-      router.replace("/login")
-    } finally {
-      setLoading(false)
-    }
-  }
-
   useEffect(() => {
-    checkAuthAndLoad()
-  }, [])
+    let isMounted = true
+
+    async function checkAdminAuth() {
+      setUnauthorizedRole(null)
+
+      // 1. Fast path: check localStorage first
+      const token = getStoredToken()
+      const storedUser = getStoredUser()
+
+      if (!token) {
+        clearAuthSession()
+        router.replace("/login?message=session_expired")
+        return
+      }
+
+      // If stored role is not ADMIN, block immediately
+      if (storedUser && storedUser.role !== "ADMIN") {
+        setUnauthorizedRole(storedUser.role)
+        setCurrentUser(storedUser)
+        setLoading(false)
+        return
+      }
+
+      // If stored role is ADMIN, render immediately and fetch data
+      if (storedUser && storedUser.role === "ADMIN") {
+        setCurrentUser(storedUser)
+        setLoading(false)
+        loadAdminData()
+      }
+
+      // 2. Validate/refresh session with server (with timeout race to never hang)
+      try {
+        const timeoutPromise = new Promise<never>((_, reject) =>
+          setTimeout(() => reject(new Error("Auth request timeout")), 4000)
+        )
+        const user = await Promise.race([getCurrentUser(), timeoutPromise])
+
+        if (!isMounted) return
+
+        if (!user || !user.role) {
+          clearAuthSession()
+          router.replace("/login?message=session_expired")
+          return
+        }
+
+        // Role-Based Access Control: Admin only
+        if (user.role !== "ADMIN") {
+          setUnauthorizedRole(user.role)
+          setCurrentUser(user)
+          setLoading(false)
+          return
+        }
+
+        setCurrentUser(user)
+        await loadAdminData()
+      } catch (err) {
+        if (!isMounted) return
+
+        // If we already had a valid admin profile from localStorage, preserve access
+        if (storedUser && storedUser.role === "ADMIN") {
+          console.warn("[Admin Dashboard] Auth refresh slow or offline, using stored session:", err)
+          setCurrentUser(storedUser)
+          setLoading(false)
+          loadAdminData()
+          return
+        }
+
+        clearAuthSession()
+        router.replace("/login?message=session_expired")
+      } finally {
+        if (isMounted) {
+          setLoading(false)
+        }
+      }
+    }
+
+    checkAdminAuth()
+
+    return () => {
+      isMounted = false
+    }
+  }, [router])
 
   const handleLogout = () => {
     clearAuthSession()
@@ -168,47 +190,51 @@ export default function DashboardPage() {
         </div>
         <div className="flex items-center gap-2 text-sm font-medium">
           <Loader2 className="h-4 w-4 animate-spin text-emerald-400" />
-          <span>Authenticating Transit Session...</span>
+          <span>Authenticating Administrator Privileges...</span>
         </div>
       </div>
     )
   }
 
-  // Unauthenticated / Session Expired Screen
-  if (authError || !currentUser) {
+  // 403 Forbidden Screen: Unauthorized access
+  if (unauthorizedRole) {
     return (
       <div className="min-h-screen bg-zinc-950 flex items-center justify-center p-4">
-        <div className="max-w-md w-full rounded-2xl border border-zinc-800 bg-zinc-900/90 p-8 text-center shadow-2xl backdrop-blur-md">
-          <div className="h-14 w-14 rounded-2xl bg-amber-500/10 border border-amber-500/30 flex items-center justify-center text-amber-400 mx-auto mb-4">
-            <AlertCircle className="h-7 w-7" />
+        <div className="max-w-md w-full rounded-2xl border border-rose-500/30 bg-zinc-900/90 p-8 text-center shadow-2xl backdrop-blur-md">
+          <div className="h-14 w-14 rounded-2xl bg-rose-500/10 border border-rose-500/30 flex items-center justify-center text-rose-400 mx-auto mb-4">
+            <ShieldAlert className="h-7 w-7" />
           </div>
-          <h2 className="text-xl font-bold text-white">Authentication Required</h2>
-          <p className="text-sm text-zinc-400 mt-2">
-            {authError || "Please sign in with your verified Institutional credentials (Admin, Driver, or Student)."}
+          <h2 className="text-xl font-bold text-white">Access Denied</h2>
+          <p className="text-sm font-medium text-rose-400 mt-2">
+            You are not authorized to access this section.
+          </p>
+          <p className="text-xs text-zinc-400 mt-1">
+            Administrator privileges are required to access this portal. You are currently logged in as a{" "}
+            <span className="font-semibold text-white uppercase">{unauthorizedRole}</span>.
           </p>
 
-          <div className="mt-6 space-y-2">
+          <div className="mt-6 space-y-2.5">
             <Link
-              href="/login"
+              href={unauthorizedRole === "DRIVER" ? "/dashboard/driver" : "/dashboard/student"}
               className="w-full py-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-semibold text-sm transition flex items-center justify-center gap-2 shadow-lg"
             >
-              <LogIn className="h-4 w-4" />
-              Sign In to Transit Portal
+              <span>Go to your {unauthorizedRole} Dashboard</span>
+              <ArrowRight className="h-4 w-4" />
             </Link>
 
-            <Link
-              href="/"
+            <button
+              onClick={handleLogout}
               className="w-full py-2.5 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-zinc-300 text-xs font-semibold transition block text-center"
             >
-              Return to Homepage
-            </Link>
+              Sign In with a Different Account
+            </button>
           </div>
         </div>
       </div>
     )
   }
 
-  const role = currentUser.role
+  if (!currentUser) return null
 
   return (
     <div className={`min-h-screen transition-colors duration-200 ${darkMode ? "bg-zinc-950 text-zinc-100" : "bg-slate-50 text-slate-900"}`}>
@@ -227,7 +253,7 @@ export default function DashboardPage() {
                   SMART BUS <span className="text-emerald-400">TRANSIT</span>
                 </span>
                 <span className="text-[10px] text-zinc-400 font-mono tracking-wider uppercase block">
-                  Institutional Fleet System
+                  Institutional Fleet System &bull; Admin Console
                 </span>
               </div>
             </Link>
@@ -243,16 +269,8 @@ export default function DashboardPage() {
                 <span className="text-xs font-bold block">{currentUser.full_name || currentUser.name || currentUser.username}</span>
                 <span className="text-[10px] text-zinc-500 font-mono">{currentUser.username}</span>
               </div>
-              <span
-                className={`ml-1 px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider ${
-                  role === "ADMIN"
-                    ? "bg-purple-500/20 text-purple-400 border border-purple-500/30"
-                    : role === "DRIVER"
-                    ? "bg-amber-500/20 text-amber-400 border border-amber-500/30"
-                    : "bg-emerald-500/20 text-emerald-400 border border-emerald-500/30"
-                }`}
-              >
-                {role}
+              <span className="ml-1 px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider bg-purple-500/20 text-purple-400 border border-purple-500/30">
+                ADMIN
               </span>
             </div>
 
@@ -270,7 +288,7 @@ export default function DashboardPage() {
             {/* Logout Button */}
             <button
               onClick={handleLogout}
-              className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/30 text-xs font-semibold transition"
+              className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/30 text-xs font-semibold transition cursor-pointer"
             >
               <LogOut className="h-3.5 w-3.5" />
               <span className="hidden md:inline">Sign Out</span>
@@ -279,49 +297,19 @@ export default function DashboardPage() {
         </div>
       </header>
 
-      {/* Main Role-Based Dashboard View */}
+      {/* Main Admin Dashboard View */}
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        {role === "ADMIN" && (
-          <AdminDashboard
-            overview={overview}
-            buses={buses}
-            attendance={attendance}
-            emergencies={emergencies}
-            managedStudents={managedStudents}
-            managedDrivers={managedDrivers}
-            managedBuses={managedBuses}
-            managedFees={managedFees}
-            onRefreshAll={loadAdminData}
-          />
-        )}
-
-        {role === "DRIVER" && (
-          <DriverDashboard
-            user={{
-              username: currentUser.username,
-              name: currentUser.full_name || currentUser.name,
-              email: currentUser.email,
-              phone: currentUser.phone,
-              assigned_bus: currentUser.assigned_bus,
-              role: currentUser.role,
-            }}
-          />
-        )}
-
-        {role === "STUDENT" && (
-          <StudentDashboard
-            user={{
-              username: currentUser.username,
-              name: currentUser.full_name || currentUser.name,
-              student_id: currentUser.student_id || currentUser.username,
-              email: currentUser.email,
-              phone: currentUser.phone,
-              department: currentUser.department,
-              assigned_bus: currentUser.assigned_bus,
-              role: currentUser.role,
-            }}
-          />
-        )}
+        <AdminDashboard
+          overview={overview}
+          buses={buses}
+          attendance={attendance}
+          emergencies={emergencies}
+          managedStudents={managedStudents}
+          managedDrivers={managedDrivers}
+          managedBuses={managedBuses}
+          managedFees={managedFees}
+          onRefreshAll={loadAdminData}
+        />
       </main>
     </div>
   )
